@@ -1,0 +1,22 @@
+Received: from mail-wr1-f41.google.com (mail-wr1-f41.google.com [209.85.221.41]) by mx.example.com with ESMTPS id xyz789
+Authentication-Results: mx.example.com; spf=pass smtp.mailfrom=github.com; dkim=pass header.d=github.com; dmarc=pass header.from=github.com
+From: GitHub <noreply@github.com>
+Return-Path: <noreply@github.com>
+To: temmymicheal78@example.com
+Subject: [GitHub] A new sign-in to your account
+Date: Mon, 4 Aug 2026 09:02:11 +0000
+Message-ID: <c4d5e6f7@github.com>
+Content-Type: text/plain; charset="UTF-8"
+
+Hey there,
+
+A new device signed in to your GitHub account.
+
+Device: Chrome on Windows
+Location: London, United Kingdom
+
+If this was you, no action is needed. If not, review your security
+settings: https://github.com/settings/security
+
+Thanks,
+The GitHub Team

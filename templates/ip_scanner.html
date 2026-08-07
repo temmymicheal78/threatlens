@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block title %}IP Scanner &mdash; ThreatLens{% endblock %}
+
+{% block content %}
+
+<h1 class="page-title">IP Scanner</h1>
+<p class="page-sub">Reputation and geolocation analysis for any public IPv4 or IPv6 address</p>
+
+{% if missing_keys %}
+<div class="notice">
+  <strong>Limited mode:</strong> no API key configured for {{ missing_keys|join(' and ') }}.
+  Scans still run, but with fewer intelligence sources. Add your keys to the
+  <code>.env</code> file and restart the app.
+</div>
+{% endif %}
+
+<section class="panel">
+  <form method="POST" action="{{ url_for('ip_scanner') }}" class="scan-form">
+    <input type="text"
+           name="ip"
+           class="scan-input"
+           placeholder="e.g. 185.220.101.10"
+           value="{{ submitted or '' }}"
+           autocomplete="off"
+           autofocus>
+    <button type="submit" class="scan-btn">Scan IP</button>
+  </form>
+
+  {% if error %}
+  <div class="error-msg">{{ error }}</div>
+  {% endif %}
+</section>
+
+
+{% if result and result.ok %}
+
+<div class="verdict-banner verdict-{{ result.verdict|lower }}">
+  <div class="verdict-left">
+    <div class="verdict-label">Verdict</div>
+    <div class="verdict-value">{{ result.verdict }}</div>
+  </div>
+  <div class="verdict-right">
+    <div class="verdict-ip mono">{{ result.ip }}</div>
+    <div class="verdict-sources">Sources consulted: {{ result.sources }}</div>
+  </div>
+</div>
+
+<section class="panel">
+  <h2 class="panel-title">Why this verdict</h2>
+  <ul class="reason-list">
+    {% for reason in result.reasons %}
+    <li>{{ reason }}</li>
+    {% endfor %}
+  </ul>
+</section>
+
+<div class="result-grid">
+
+  <!-- ------------------------------------------------------ AbuseIPDB -->
+  <section class="panel">
+    <h2 class="panel-title">AbuseIPDB</h2>
+    {% if result.abuse.available %}
+    <div class="score-ring {{ 'high' if result.abuse.abuse_score >= 50 else ('mid' if result.abuse.abuse_score >= 20 else 'low') }}">
+      {{ result.abuse.abuse_score }}<small>%</small>
+    </div>
+    <p class="score-caption">Abuse confidence score</p>
+    <table>
+      <tbody>
+        <tr><td>Total reports</td><td class="mono">{{ result.abuse.total_reports }}</td></tr>
+        <tr><td>Distinct reporters</td><td class="mono">{{ result.abuse.distinct_reporters }}</td></tr>
+        <tr><td>ISP</td><td>{{ result.abuse.isp or '&mdash;'|safe }}</td></tr>
+        <tr><td>Usage type</td><td>{{ result.abuse.usage_type or '&mdash;'|safe }}</td></tr>
+        <tr><td>Tor exit node</td><td>{{ 'Yes' if result.abuse.is_tor else 'No' }}</td></tr>
+        <tr><td>Last reported</td><td class="mono">{{ result.abuse.last_reported or 'Never' }}</td></tr>
+      </tbody>
+    </table>
+    {% else %}
+    <div class="unavailable">{{ result.abuse.error }}</div>
+    {% endif %}
+  </section>
+
+  <!-- ----------------------------------------------------- VirusTotal -->
+  <section class="panel">
+    <h2 class="panel-title">VirusTotal</h2>
+    {% if result.virustotal.available %}
+    <div class="score-ring {{ 'high' if result.virustotal.malicious >= 3 else ('mid' if result.virustotal.malicious or result.virustotal.suspicious else 'low') }}">
+      {{ result.virustotal.malicious }}<small>/{{ result.virustotal.total_engines }}</small>
+    </div>
+    <p class="score-caption">Engines flagging as malicious</p>
+    <table>
+      <tbody>
+        <tr><td>Malicious</td><td class="mono">{{ result.virustotal.malicious }}</td></tr>
+        <tr><td>Suspicious</td><td class="mono">{{ result.virustotal.suspicious }}</td></tr>
+        <tr><td>Harmless</td><td class="mono">{{ result.virustotal.harmless }}</td></tr>
+        <tr><td>Community score</td><td class="mono">{{ result.virustotal.reputation }}</td></tr>
+        <tr><td>AS owner</td><td>{{ result.virustotal.as_owner or '&mdash;'|safe }}</td></tr>
+      </tbody>
+    </table>
+    {% else %}
+    <div class="unavailable">{{ result.virustotal.error }}</div>
+    {% endif %}
+  </section>
+
+  <!-- ---------------------------------------------------- Geolocation -->
+  <section class="panel">
+    <h2 class="panel-title">Geolocation</h2>
+    {% if result.geo.available %}
+    <table>
+      <tbody>
+        <tr><td>Country</td><td>{{ result.geo.country }} ({{ result.geo.country_code }})</td></tr>
+        <tr><td>City</td><td>{{ result.geo.city or '&mdash;'|safe }}</td></tr>
+        <tr><td>Region</td><td>{{ result.geo.region or '&mdash;'|safe }}</td></tr>
+        <tr><td>ISP</td><td>{{ result.geo.isp or '&mdash;'|safe }}</td></tr>
+        <tr><td>Organisation</td><td>{{ result.geo.org or '&mdash;'|safe }}</td></tr>
+        <tr><td>ASN</td><td class="mono">{{ result.geo.asn or '&mdash;'|safe }}</td></tr>
+        <tr><td>Timezone</td><td>{{ result.geo.timezone or '&mdash;'|safe }}</td></tr>
+      </tbody>
+    </table>
+    {% else %}
+    <div class="unavailable">{{ result.geo.error }}</div>
+    {% endif %}
+  </section>
+
+</div>
+
+{% endif %}
+
+{% endblock %}

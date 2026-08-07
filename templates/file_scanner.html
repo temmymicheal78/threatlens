@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}File Hash Scanner &mdash; ThreatLens{% endblock %}
+
+{% block content %}
+
+<h1 class="page-title">File Hash Scanner</h1>
+<p class="page-sub">Malware detection through hash reputation lookup</p>
+
+<section class="panel">
+  <form method="POST" action="{{ url_for('file_scanner') }}" enctype="multipart/form-data">
+
+    <label class="field-label">Paste a hash</label>
+    <input type="text"
+           name="hash"
+           class="scan-input full"
+           placeholder="MD5, SHA-1 or SHA-256"
+           value="{{ submitted or '' }}"
+           autocomplete="off">
+
+    <div class="or-divider"><span>or</span></div>
+
+    <label class="field-label">Choose a file to fingerprint</label>
+    <input type="file" name="file" class="file-input">
+    <p class="form-hint">
+      The file is hashed on this machine and never uploaded &mdash; only its
+      SHA-256 fingerprint is sent to VirusTotal.
+    </p>
+
+    <div class="form-actions">
+      <button type="submit" class="scan-btn">Scan File Hash</button>
+    </div>
+  </form>
+
+  {% if error %}
+  <div class="error-msg">{{ error }}</div>
+  {% endif %}
+</section>
+
+
+{% if result and result.ok %}
+
+<div class="verdict-banner verdict-{{ result.verdict|lower }}">
+  <div class="verdict-left">
+    <div class="verdict-label">Verdict</div>
+    <div class="verdict-value">{{ result.verdict }}</div>
+  </div>
+  <div class="verdict-right">
+    <div class="verdict-ip mono break">{{ result.hash }}</div>
+    <div class="verdict-sources">{{ result.hash_type }} &middot; Sources: {{ result.sources }}</div>
+  </div>
+</div>
+
+<section class="panel">
+  <h2 class="panel-title">Why this verdict</h2>
+  <ul class="reason-list">
+    {% for reason in result.reasons %}
+    <li>{{ reason }}</li>
+    {% endfor %}
+  </ul>
+</section>
+
+<div class="result-grid">
+
+  <!-- ----------------------------------------------------- detections -->
+  <section class="panel">
+    <h2 class="panel-title">Detection Summary</h2>
+    {% if result.virustotal.available %}
+    <div class="score-ring {{ 'high' if result.virustotal.malicious >= 3 else ('mid' if result.virustotal.malicious or result.virustotal.suspicious else 'low') }}">
+      {{ result.virustotal.malicious }}<small>/{{ result.virustotal.total_engines }}</small>
+    </div>
+    <p class="score-caption">Engines detecting malware</p>
+    <table>
+      <tbody>
+        <tr><td>Malicious</td><td class="mono">{{ result.virustotal.malicious }}</td></tr>
+        <tr><td>Suspicious</td><td class="mono">{{ result.virustotal.suspicious }}</td></tr>
+        <tr><td>Undetected</td><td class="mono">{{ result.virustotal.undetected }}</td></tr>
+        {% if result.virustotal.threat_label %}
+        <tr><td>Classification</td><td class="mono">{{ result.virustotal.threat_label }}</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+
+    {% if result.virustotal.flagged_by %}
+    <p class="score-caption" style="margin-top:16px">Detected by</p>
+    <div class="engine-list">
+      {% for engine in result.virustotal.flagged_by %}
+      <span class="engine-chip">{{ engine }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="unavailable">{{ result.virustotal.error }}</div>
+    {% endif %}
+  </section>
+
+  <!-- ---------------------------------------------------- file detail -->
+  <section class="panel">
+    <h2 class="panel-title">File Details</h2>
+
+    {% if result.local %}
+    <table>
+      <tbody>
+        <tr><td>Filename</td><td>{{ result.local.filename }}</td></tr>
+        <tr><td>MD5</td><td class="mono break">{{ result.local.md5 }}</td></tr>
+        <tr><td>SHA-1</td><td class="mono break">{{ result.local.sha1 }}</td></tr>
+        <tr><td>SHA-256</td><td class="mono break">{{ result.local.sha256 }}</td></tr>
+      </tbody>
+    </table>
+    <p class="form-hint" style="margin-top:12px">
+      Computed locally &mdash; this file was never uploaded.
+    </p>
+
+    {% elif result.virustotal.available %}
+    <table>
+      <tbody>
+        <tr><td>Name</td><td class="break">{{ result.virustotal.file_name or '&mdash;'|safe }}</td></tr>
+        <tr><td>Type</td><td>{{ result.virustotal.file_type or '&mdash;'|safe }}</td></tr>
+        <tr><td>Size</td><td class="mono">{{ result.size_label or '&mdash;'|safe }}</td></tr>
+        <tr><td>First seen</td><td class="mono">{{ result.first_seen or '&mdash;'|safe }}</td></tr>
+        <tr><td>Submissions</td><td class="mono">{{ result.virustotal.times_submitted or '&mdash;'|safe }}</td></tr>
+        <tr><td>MD5</td><td class="mono break">{{ result.virustotal.md5 or '&mdash;'|safe }}</td></tr>
+        <tr><td>SHA-256</td><td class="mono break">{{ result.virustotal.sha256 or '&mdash;'|safe }}</td></tr>
+      </tbody>
+    </table>
+
+    {% else %}
+    <div class="unavailable">No file metadata available.</div>
+    {% endif %}
+  </section>
+
+</div>
+
+{% endif %}
+
+{% endblock %}

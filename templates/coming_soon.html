@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}{{ module_name }} &mdash; ThreatLens{% endblock %}
+
+{% block content %}
+
+<h1 class="page-title">{{ module_name }}</h1>
+<p class="page-sub">{{ description }}</p>
+
+<section class="panel">
+  <div class="soon">
+    <div class="soon-icon">{{ icon|safe }}</div>
+    <h2>Module under construction</h2>
+    <p>{{ detail }}</p>
+    <div class="soon-week">Scheduled for {{ week }}</div>
+  </div>
+</section>
+
+{% endblock %}

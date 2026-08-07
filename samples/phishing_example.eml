@@ -1,0 +1,24 @@
+Received: from mail.evil-host.ru (mail.evil-host.ru [185.220.101.10]) by mx.google.com with ESMTP id abc123
+Received: from internal.relay (internal.relay [10.0.0.5]) by mail.evil-host.ru with SMTP
+Authentication-Results: mx.google.com; spf=fail smtp.mailfrom=paypa1-secure.xyz; dkim=fail header.d=paypa1-secure.xyz; dmarc=fail header.from=paypal.com
+From: "PayPal Support" <support@paypa1-secure.xyz>
+Return-Path: <bounce@evil-host.ru>
+Reply-To: <collect-replies@another-domain.tk>
+To: victim@example.com
+Subject: URGENT: Your account will be suspended - verify your account now
+Date: Mon, 4 Aug 2026 10:14:22 +0000
+Message-ID: <9f8e7d6c@evil-host.ru>
+Content-Type: text/plain; charset="UTF-8"
+
+Dear Valued Customer,
+
+We detected unusual activity on your account. Your account will be
+suspended within 24 hours unless you confirm your identity.
+
+Click here to verify: http://paypa1-secure.xyz/verify/login.php
+
+Alternative link: https://bit.ly/3xAbCdEfG
+
+Failure to act now will result in permanent closure.
+
+PayPal Security Team

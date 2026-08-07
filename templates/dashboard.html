@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard &mdash; ThreatLens{% endblock %}
+
+{% block content %}
+
+<h1 class="page-title">Dashboard</h1>
+<p class="page-sub">Threat intelligence overview and recent scan activity</p>
+
+<section class="stats">
+  <div class="stat-card">
+    <div class="stat-label">Total Scans</div>
+    <div class="stat-value">{{ stats.total_scans }}</div>
+  </div>
+  <div class="stat-card threat">
+    <div class="stat-label">Threats Detected</div>
+    <div class="stat-value">{{ stats.threats }}</div>
+  </div>
+  <div class="stat-card clean">
+    <div class="stat-label">Clean Results</div>
+    <div class="stat-value">{{ stats.clean }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Last Scan</div>
+    <div class="stat-value small">{{ stats.last_scan }}</div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2 class="panel-title">Recent Scans</h2>
+
+  {% if recent_scans %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Indicator</th>
+          <th>Type</th>
+          <th>Verdict</th>
+          <th>Source</th>
+          <th>Scanned At</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for scan in recent_scans %}
+        <tr>
+          <td class="mono">{{ scan.indicator }}</td>
+          <td>{{ scan.type }}</td>
+          <td><span class="badge badge-{{ scan.verdict|lower }}">{{ scan.verdict }}</span></td>
+          <td>{{ scan.source }}</td>
+          <td class="mono">{{ scan.scanned_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty">
+    <div class="empty-icon">&#9678;</div>
+    <p>No scans recorded yet.</p>
+    <p>Run your first scan from the IP Scanner tab to populate this dashboard.</p>
+  </div>
+  {% endif %}
+</section>
+
+{% endblock %}

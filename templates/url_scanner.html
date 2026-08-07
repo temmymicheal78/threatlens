@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block title %}URL Scanner &mdash; ThreatLens{% endblock %}
+
+{% block content %}
+
+<h1 class="page-title">URL / Domain Scanner</h1>
+<p class="page-sub">Multi-engine malware analysis and domain age checking</p>
+
+{% if whois_missing %}
+<div class="notice">
+  <strong>WHOIS unavailable:</strong> domain age checking is switched off.
+  Install it with <code>pip install python-whois</code> and restart the app.
+</div>
+{% endif %}
+
+<section class="panel">
+  <form method="POST" action="{{ url_for('url_scanner') }}" class="scan-form">
+    <input type="text"
+           name="url"
+           class="scan-input"
+           placeholder="e.g. example.com  or  https://example.com/login"
+           value="{{ submitted or '' }}"
+           autocomplete="off"
+           autofocus>
+    <button type="submit" class="scan-btn">Scan URL</button>
+  </form>
+
+  {% if error %}
+  <div class="error-msg">{{ error }}</div>
+  {% endif %}
+
+  <p class="form-hint">
+    A URL never seen by VirusTotal is submitted for fresh analysis, which
+    can take up to 15 seconds.
+  </p>
+</section>
+
+
+{% if result and result.ok %}
+
+<div class="verdict-banner verdict-{{ result.verdict|lower }}">
+  <div class="verdict-left">
+    <div class="verdict-label">Verdict</div>
+    <div class="verdict-value">{{ result.verdict }}</div>
+  </div>
+  <div class="verdict-right">
+    <div class="verdict-ip mono">{{ result.domain }}</div>
+    <div class="verdict-sources">Sources consulted: {{ result.sources }}</div>
+  </div>
+</div>
+
+<section class="panel">
+  <h2 class="panel-title">Why this verdict</h2>
+  <ul class="reason-list">
+    {% for reason in result.reasons %}
+    <li>{{ reason }}</li>
+    {% endfor %}
+  </ul>
+</section>
+
+<div class="result-grid">
+
+  <!-- ----------------------------------------------------- VirusTotal -->
+  <section class="panel">
+    <h2 class="panel-title">VirusTotal</h2>
+    {% if result.virustotal.available %}
+    <div class="score-ring {{ 'high' if result.virustotal.malicious >= 3 else ('mid' if result.virustotal.malicious or result.virustotal.suspicious else 'low') }}">
+      {{ result.virustotal.malicious }}<small>/{{ result.virustotal.total_engines }}</small>
+    </div>
+    <p class="score-caption">Engines flagging as malicious</p>
+    <table>
+      <tbody>
+        <tr><td>Malicious</td><td class="mono">{{ result.virustotal.malicious }}</td></tr>
+        <tr><td>Suspicious</td><td class="mono">{{ result.virustotal.suspicious }}</td></tr>
+        <tr><td>Harmless</td><td class="mono">{{ result.virustotal.harmless }}</td></tr>
+        <tr><td>Undetected</td><td class="mono">{{ result.virustotal.undetected }}</td></tr>
+        {% if result.virustotal.title %}
+        <tr><td>Page title</td><td>{{ result.virustotal.title }}</td></tr>
+        {% endif %}
+        {% if result.virustotal.final_url %}
+        <tr><td>Final URL</td><td class="mono break">{{ result.virustotal.final_url }}</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+
+    {% if result.virustotal.flagged_by %}
+    <p class="score-caption" style="margin-top:16px">Flagged by</p>
+    <div class="engine-list">
+      {% for engine in result.virustotal.flagged_by %}
+      <span class="engine-chip">{{ engine }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="unavailable">{{ result.virustotal.error }}</div>
+    {% endif %}
+  </section>
+
+  <!-- ---------------------------------------------------------- WHOIS -->
+  <section class="panel">
+    <h2 class="panel-title">Domain Registration</h2>
+    {% if result.whois.available %}
+    {% set age = result.whois.age_days %}
+    <div class="score-ring {{ 'high' if age is not none and age < 7 else ('mid' if age is not none and age < 30 else 'low') }}">
+      {% if age is not none %}{{ age }}<small>d</small>{% else %}?{% endif %}
+    </div>
+    <p class="score-caption">Domain age in days</p>
+    <table>
+      <tbody>
+        <tr><td>Age</td><td>{{ result.whois.age_label }}</td></tr>
+        <tr><td>Created</td><td class="mono">{{ result.whois.created or '&mdash;'|safe }}</td></tr>
+        <tr><td>Expires</td><td class="mono">{{ result.whois.expires or '&mdash;'|safe }}</td></tr>
+        <tr><td>Registrar</td><td>{{ result.whois.registrar or '&mdash;'|safe }}</td></tr>
+        <tr><td>Country</td><td>{{ result.whois.country or '&mdash;'|safe }}</td></tr>
+      </tbody>
+    </table>
+
+    {% if result.whois.name_servers %}
+    <p class="score-caption" style="margin-top:16px">Name servers</p>
+    <div class="engine-list">
+      {% for ns in result.whois.name_servers %}
+      <span class="engine-chip">{{ ns }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="unavailable">{{ result.whois.error }}</div>
+    {% endif %}
+  </section>
+
+</div>
+
+{% endif %}
+
+{% endblock %}

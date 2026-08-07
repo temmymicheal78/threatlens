@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+
+{% block title %}Email Analyzer &mdash; ThreatLens{% endblock %}
+
+{% block content %}
+
+<h1 class="page-title">Email Analyzer</h1>
+<p class="page-sub">Phishing detection through SPF, DKIM and DMARC header analysis</p>
+
+<section class="panel">
+  <form method="POST" action="{{ url_for('email_analyzer') }}">
+    <textarea name="raw_email"
+              class="scan-textarea"
+              rows="10"
+              placeholder="Paste the full raw email here, including headers...
+
+Gmail:   open the email -> three dots -> Show original
+Outlook: open the email -> File -> Properties -> Internet headers">{{ submitted or '' }}</textarea>
+    <div class="form-actions">
+      <button type="submit" class="scan-btn">Analyze Email</button>
+      <span class="form-hint">
+        Headers alone are enough &mdash; the body is optional but lets us
+        extract embedded URLs.
+      </span>
+    </div>
+  </form>
+
+  {% if error %}
+  <div class="error-msg">{{ error }}</div>
+  {% endif %}
+</section>
+
+
+{% if result and result.ok %}
+
+<div class="verdict-banner verdict-{{ result.verdict|lower }}">
+  <div class="verdict-left">
+    <div class="verdict-label">Verdict</div>
+    <div class="verdict-value">{{ result.verdict }}</div>
+  </div>
+  <div class="verdict-right">
+    <div class="verdict-ip mono">{{ result.spoofing.from_address or 'unknown sender' }}</div>
+    <div class="verdict-sources">Sources consulted: {{ result.sources }}</div>
+  </div>
+</div>
+
+<!-- ------------------------------------------------- authentication -->
+<section class="panel">
+  <h2 class="panel-title">Email Authentication</h2>
+  <div class="auth-row">
+    {% for name, key in [('SPF','spf'), ('DKIM','dkim'), ('DMARC','dmarc')] %}
+    {% set value = result.auth[key] %}
+    <div class="auth-card {{ 'pass' if value == 'pass' else ('fail' if value else 'none') }}">
+      <div class="auth-name">{{ name }}</div>
+      <div class="auth-value">{{ (value or 'not checked')|upper }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="auth-explain">
+    SPF proves the sending server was authorised. DKIM proves the message was
+    not altered in transit. DMARC ties both back to the domain in the From
+    line &mdash; a DMARC failure means the domain owner's own policy says
+    this message is not genuine.
+  </p>
+</section>
+
+<section class="panel">
+  <h2 class="panel-title">Why this verdict</h2>
+  <ul class="reason-list">
+    {% for reason in result.reasons %}
+    <li>{{ reason }}</li>
+    {% endfor %}
+  </ul>
+</section>
+
+<div class="result-grid">
+
+  <!-- --------------------------------------------------- sender info -->
+  <section class="panel">
+    <h2 class="panel-title">Sender Details</h2>
+    <table>
+      <tbody>
+        <tr><td>Subject</td><td>{{ result.subject or '&mdash;'|safe }}</td></tr>
+        <tr><td>Display name</td><td>{{ result.spoofing.display_name or '&mdash;'|safe }}</td></tr>
+        <tr><td>From address</td><td class="mono break">{{ result.spoofing.from_address or '&mdash;'|safe }}</td></tr>
+        <tr><td>From domain</td><td class="mono">{{ result.spoofing.from_domain or '&mdash;'|safe }}</td></tr>
+        <tr><td>Return-Path</td><td class="mono">{{ result.spoofing.return_path_domain or '&mdash;'|safe }}</td></tr>
+        <tr><td>Reply-To</td><td class="mono">{{ result.spoofing.reply_to_domain or '&mdash;'|safe }}</td></tr>
+        <tr><td>Date</td><td>{{ result.date or '&mdash;'|safe }}</td></tr>
+      </tbody>
+    </table>
+
+    {% if result.keywords %}
+    <p class="score-caption" style="margin-top:16px">Urgency language in subject</p>
+    <div class="engine-list">
+      {% for word in result.keywords %}
+      <span class="engine-chip">{{ word }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+
+  <!-- ------------------------------------------------ originating IP -->
+  <section class="panel">
+    <h2 class="panel-title">Originating Server</h2>
+    {% if result.origin_ip %}
+    <table>
+      <tbody>
+        <tr><td>Sending IP</td><td class="mono">{{ result.origin_ip }}</td></tr>
+        {% if result.origin_reputation.available %}
+        <tr>
+          <td>Abuse score</td>
+          <td class="mono">
+            <span class="score {{ 'score-high' if result.origin_reputation.abuse_score >= 50 else 'score-low' }}">
+              {{ result.origin_reputation.abuse_score }}%
+            </span>
+          </td>
+        </tr>
+        <tr><td>Total reports</td><td class="mono">{{ result.origin_reputation.total_reports }}</td></tr>
+        <tr><td>ISP</td><td>{{ result.origin_reputation.isp or '&mdash;'|safe }}</td></tr>
+        <tr><td>Country</td><td>{{ result.origin_reputation.country_code or '&mdash;'|safe }}</td></tr>
+        <tr><td>Tor exit node</td><td>{{ 'Yes' if result.origin_reputation.is_tor else 'No' }}</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+    {% if not result.origin_reputation.available %}
+    <div class="unavailable">{{ result.origin_reputation.error }}</div>
+    {% endif %}
+    {% else %}
+    <div class="unavailable">
+      No public originating IP found in the Received headers.
+    </div>
+    {% endif %}
+  </section>
+
+</div>
+
+<!-- ------------------------------------------------------ found URLs -->
+{% if result.urls %}
+<section class="panel">
+  <h2 class="panel-title">Embedded URLs ({{ result.urls|length }})</h2>
+  <p class="form-hint" style="margin-bottom:14px">
+    Copy any of these into the URL Scanner to check them individually.
+    They are shown as plain text and are not clickable.
+  </p>
+  <div class="url-list">
+    {% for url in result.urls %}
+    <div class="url-item mono break">{{ url }}</div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% endif %}
+
+{% endblock %}

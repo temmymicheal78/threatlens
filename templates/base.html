@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}ThreatLens{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+  <header class="header">
+    <div class="logo">
+      <span class="logo-icon">&#9678;</span>
+      Threat<span>Lens</span>
+    </div>
+    <div class="tagline">Unified Multi-Vector Threat Analysis Platform</div>
+  </header>
+
+  <nav class="nav">
+    <a href="{{ url_for('dashboard') }}"      class="{% if active == 'dashboard' %}active{% endif %}">Dashboard</a>
+    <a href="{{ url_for('ip_scanner') }}"     class="{% if active == 'ip' %}active{% endif %}">IP Scanner</a>
+    <a href="{{ url_for('url_scanner') }}"    class="{% if active == 'url' %}active{% endif %}">URL Scanner</a>
+    <a href="{{ url_for('email_analyzer') }}" class="{% if active == 'email' %}active{% endif %}">Email Analyzer</a>
+    <a href="{{ url_for('file_scanner') }}"   class="{% if active == 'file' %}active{% endif %}">File Hash Scanner</a>
+  </nav>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    ThreatLens &mdash; built by Temiloluwa Michael Ogunrinde &middot;
+    <a href="https://github.com/temmymicheal78" target="_blank" rel="noopener">github.com/temmymicheal78</a>
+  </footer>
+
+</body>
+</html>

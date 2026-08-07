@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# Secrets -- never commit API keys
+.env
+
+# Local database (scan history is not source code)
+*.db
+*.db-journal
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
