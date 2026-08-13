@@ -8,7 +8,7 @@ Author: Temiloluwa Michael Ogunrinde
 
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 # Database lives next to this file, so it works no matter where you run from.
@@ -141,6 +141,124 @@ def get_recent_scans(limit=10):
         scan["scanned_at"] = _format_time(scan["scanned_at"])
         scans.append(scan)
     return scans
+
+
+def search_scans(indicator_type=None, verdict=None, query=None, limit=300):
+    """Return scans matching the given filters, newest first.
+
+    Any filter left as None is ignored, so one function serves both the
+    unfiltered history page and every combination of filters.
+    """
+    sql = [
+        "SELECT indicator, indicator_type AS type, verdict, source, details,",
+        "       scanned_at",
+        "FROM scans",
+        "WHERE 1 = 1",
+    ]
+    params = []
+
+    if indicator_type:
+        sql.append("AND indicator_type = ?")
+        params.append(indicator_type)
+
+    if verdict:
+        sql.append("AND verdict = ?")
+        params.append(verdict)
+
+    if query:
+        sql.append("AND indicator LIKE ?")
+        params.append(f"%{query}%")
+
+    sql.append("ORDER BY scanned_at DESC LIMIT ?")
+    params.append(limit)
+
+    conn = get_connection()
+    rows = conn.execute(" ".join(sql), params).fetchall()
+    conn.close()
+
+    scans = []
+    for row in rows:
+        scan = dict(row)
+        scan["scanned_at"] = _format_time(scan["scanned_at"])
+        scans.append(scan)
+    return scans
+
+
+def get_indicator_types():
+    """Distinct indicator types present, for populating the filter menu."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT DISTINCT indicator_type FROM scans ORDER BY indicator_type"
+    ).fetchall()
+    conn.close()
+    return [row["indicator_type"] for row in rows]
+
+
+def get_verdict_breakdown():
+    """Count of scans per verdict, for the dashboard's share chart."""
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT verdict, COUNT(*) AS count
+        FROM scans
+        GROUP BY verdict
+        """
+    ).fetchall()
+    conn.close()
+
+    counts = {row["verdict"]: row["count"] for row in rows}
+
+    # Return a fixed order so the chart's colours never shuffle between loads.
+    return [
+        {"verdict": v, "count": counts.get(v, 0)}
+        for v in (VERDICT_MALICIOUS, VERDICT_SUSPICIOUS, VERDICT_CLEAN)
+    ]
+
+
+def get_type_breakdown():
+    """Count of scans per indicator type, highest first."""
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT indicator_type AS type, COUNT(*) AS count
+        FROM scans
+        GROUP BY indicator_type
+        ORDER BY count DESC
+        """
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def get_daily_activity(days=14):
+    """Scans per day over the last *days* days, oldest first.
+
+    Days with no scans are filled in with zero so the line does not jump
+    across missing dates and imply activity that never happened.
+    """
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT substr(scanned_at, 1, 10) AS day, COUNT(*) AS count
+        FROM scans
+        GROUP BY day
+        """
+    ).fetchall()
+    conn.close()
+
+    counts = {row["day"]: row["count"] for row in rows}
+
+    today = datetime.now().date()
+    series = []
+    for offset in range(days - 1, -1, -1):
+        day = today - timedelta(days=offset)
+        key = day.isoformat()
+        series.append({
+            "day": key,
+            "label": day.strftime("%d %b"),
+            "count": counts.get(key, 0),
+        })
+    return series
 
 
 def _format_time(iso_string):

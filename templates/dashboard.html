@@ -26,6 +26,47 @@
   </div>
 </section>
 
+{% if stats.total_scans %}
+
+<!-- ------------------------------------------------- verdict share -->
+<section class="panel">
+  <h2 class="panel-title">Verdict Share</h2>
+  <div class="chart-box chart-short">
+    <canvas id="verdictChart"></canvas>
+  </div>
+  <div class="chart-legend">
+    {% for v in verdicts %}
+    <span class="legend-item">
+      <span class="legend-swatch swatch-{{ v.verdict|lower }}"></span>
+      {{ v.verdict|capitalize }}
+      <b>{{ v.count }}</b>
+    </span>
+    {% endfor %}
+  </div>
+</section>
+
+<div class="result-grid">
+
+  <!-- ------------------------------------------ scans by type -->
+  <section class="panel">
+    <h2 class="panel-title">Scans by Indicator Type</h2>
+    <div class="chart-box">
+      <canvas id="typeChart"></canvas>
+    </div>
+  </section>
+
+  <!-- --------------------------------------- activity over time -->
+  <section class="panel">
+    <h2 class="panel-title">Scan Activity &mdash; Last 14 Days</h2>
+    <div class="chart-box">
+      <canvas id="activityChart"></canvas>
+    </div>
+  </section>
+
+</div>
+
+{% endif %}
+
 <section class="panel">
   <h2 class="panel-title">Recent Scans</h2>
 
@@ -63,4 +104,146 @@
   {% endif %}
 </section>
 
+{% endblock %}
+
+
+{% block scripts %}
+{% if stats.total_scans %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+  if (typeof Chart === 'undefined') { return; }
+
+  // Theme tokens, read once so the charts stay in step with style.css.
+  const css    = getComputedStyle(document.documentElement);
+  const token  = (name, fallback) => (css.getPropertyValue(name) || fallback).trim();
+  const SURFACE = token('--card',   '#132f4c');
+  const ACCENT  = token('--accent', '#00ff88');
+  const DANGER  = token('--danger', '#ff4d5e');
+  const WARN    = token('--warn',   '#ffb020');
+  const MUTED   = token('--muted',  '#8fa8bc');
+  const GRID    = 'rgba(143, 168, 188, 0.14)';
+
+  Chart.defaults.font.family = '"Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+  Chart.defaults.font.size = 12;
+  Chart.defaults.color = MUTED;
+
+  // Shared tooltip styling -- hover is on by default for every chart.
+  const tooltip = {
+    backgroundColor: '#0a1929',
+    borderColor: GRID,
+    borderWidth: 1,
+    titleColor: '#e0e6ed',
+    bodyColor: '#e0e6ed',
+    padding: 10,
+    displayColors: false,
+  };
+
+  const verdicts = {{ verdicts|tojson }};
+  const types    = {{ types|tojson }};
+  const activity = {{ activity|tojson }};
+
+  // ---------------------------------------------- verdict share
+  // Part-to-whole across three reserved status colours. Segments are
+  // separated by a 2px surface-coloured border rather than a gap.
+  new Chart(document.getElementById('verdictChart'), {
+    type: 'bar',
+    data: {
+      labels: ['Verdicts'],
+      datasets: verdicts.map(function (v) {
+        return {
+          label: v.verdict,
+          data: [v.count],
+          backgroundColor: v.verdict === 'MALICIOUS' ? DANGER
+                         : v.verdict === 'SUSPICIOUS' ? WARN : ACCENT,
+          borderColor: SURFACE,
+          borderWidth: 2,
+          borderRadius: 4,
+          borderSkipped: false,
+        };
+      }),
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },   // the HTML legend below carries counts
+        tooltip: tooltip,
+      },
+      scales: {
+        x: { stacked: true, grid: { color: GRID }, border: { color: GRID },
+             ticks: { precision: 0 } },
+        y: { stacked: true, grid: { display: false }, border: { display: false },
+             ticks: { display: false } },
+      },
+    },
+  });
+
+  // -------------------------------------------- scans by type
+  // Nominal categories compared by magnitude, so one hue -- colouring each
+  // bar differently would spend the identity channel re-encoding length.
+  new Chart(document.getElementById('typeChart'), {
+    type: 'bar',
+    data: {
+      labels: types.map(function (t) { return t.type; }),
+      datasets: [{
+        label: 'Scans',
+        data: types.map(function (t) { return t.count; }),
+        backgroundColor: ACCENT,
+        borderRadius: 4,
+        borderSkipped: false,
+        barThickness: 18,
+      }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: tooltip },
+      scales: {
+        x: { grid: { color: GRID }, border: { color: GRID },
+             ticks: { precision: 0 }, beginAtZero: true },
+        y: { grid: { display: false }, border: { display: false } },
+      },
+    },
+  });
+
+  // ----------------------------------------- activity over time
+  // Single series, so no legend -- the panel title names it.
+  new Chart(document.getElementById('activityChart'), {
+    type: 'line',
+    data: {
+      labels: activity.map(function (a) { return a.label; }),
+      datasets: [{
+        label: 'Scans',
+        data: activity.map(function (a) { return a.count; }),
+        borderColor: ACCENT,
+        backgroundColor: 'rgba(0, 255, 136, 0.10)',
+        borderWidth: 2,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        pointBackgroundColor: ACCENT,
+        pointBorderColor: SURFACE,
+        pointBorderWidth: 2,
+        fill: true,
+        tension: 0.25,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false }, tooltip: tooltip },
+      scales: {
+        x: { grid: { display: false }, border: { color: GRID },
+             ticks: { maxRotation: 0, autoSkipPadding: 12 } },
+        y: { grid: { color: GRID }, border: { display: false },
+             beginAtZero: true, ticks: { precision: 0 } },
+      },
+    },
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}

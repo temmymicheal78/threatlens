@@ -50,6 +50,31 @@ def dashboard():
         active='dashboard',
         stats=database.get_stats(),
         recent_scans=database.get_recent_scans(limit=10),
+        verdicts=database.get_verdict_breakdown(),
+        types=database.get_type_breakdown(),
+        activity=database.get_daily_activity(days=14),
+    )
+
+
+@app.route('/history')
+def history():
+    """Full scan audit trail, filterable by indicator, type and verdict."""
+    query = (request.args.get('q') or '').strip() or None
+    selected_type = (request.args.get('type') or '').strip() or None
+    selected_verdict = (request.args.get('verdict') or '').strip() or None
+
+    return render_template(
+        'history.html',
+        active='history',
+        scans=database.search_scans(
+            indicator_type=selected_type,
+            verdict=selected_verdict,
+            query=query,
+        ),
+        all_types=database.get_indicator_types(),
+        query=query,
+        selected_type=selected_type,
+        selected_verdict=selected_verdict,
     )
 
 

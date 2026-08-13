@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block title %}Scan History &mdash; ThreatLens{% endblock %}
+
+{% block content %}
+
+<h1 class="page-title">Scan History</h1>
+<p class="page-sub">Full audit trail of every indicator analysed</p>
+
+<section class="panel">
+  <form method="GET" action="{{ url_for('history') }}" class="filter-row">
+
+    <div class="filter-field">
+      <label class="field-label" for="q">Search indicator</label>
+      <input type="text" id="q" name="q" class="scan-input"
+             placeholder="IP, domain, hash or address"
+             value="{{ query or '' }}" autocomplete="off">
+    </div>
+
+    <div class="filter-field narrow">
+      <label class="field-label" for="type">Type</label>
+      <select id="type" name="type" class="filter-select">
+        <option value="">All types</option>
+        {% for t in all_types %}
+        <option value="{{ t }}" {% if selected_type == t %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="filter-field narrow">
+      <label class="field-label" for="verdict">Verdict</label>
+      <select id="verdict" name="verdict" class="filter-select">
+        <option value="">All verdicts</option>
+        {% for v in ['MALICIOUS', 'SUSPICIOUS', 'CLEAN'] %}
+        <option value="{{ v }}" {% if selected_verdict == v %}selected{% endif %}>{{ v|capitalize }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="filter-field auto">
+      <button type="submit" class="scan-btn">Filter</button>
+    </div>
+
+    {% if query or selected_type or selected_verdict %}
+    <div class="filter-field auto">
+      <a href="{{ url_for('history') }}" class="clear-link">Clear</a>
+    </div>
+    {% endif %}
+
+  </form>
+</section>
+
+<section class="panel">
+  <h2 class="panel-title">
+    {{ scans|length }} result{{ '' if scans|length == 1 else 's' }}
+    {%- if query or selected_type or selected_verdict %} (filtered){% endif %}
+  </h2>
+
+  {% if scans %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Indicator</th>
+          <th>Type</th>
+          <th>Verdict</th>
+          <th>Sources</th>
+          <th>Scanned</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for scan in scans %}
+        <tr class="history-row">
+          <td class="mono break">{{ scan.indicator }}</td>
+          <td>{{ scan.type }}</td>
+          <td><span class="badge badge-{{ scan.verdict|lower }}">{{ scan.verdict }}</span></td>
+          <td class="muted">{{ scan.source }}</td>
+          <td class="mono muted nowrap">{{ scan.scanned_at }}</td>
+        </tr>
+        {% if scan.details %}
+        <tr class="detail-row">
+          <td colspan="5" class="detail-cell">{{ scan.details }}</td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty">
+    <div class="empty-icon">&#9678;</div>
+    {% if query or selected_type or selected_verdict %}
+    <p>No scans match those filters.</p>
+    {% else %}
+    <p>No scans recorded yet.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+
+{% endblock %}
