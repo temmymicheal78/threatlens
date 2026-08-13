@@ -10,7 +10,7 @@ import ipaddress
 
 import config
 import database
-from threat_intel import abuseipdb, geolocation, virustotal
+from threat_intel import abuseipdb, geolocation, otx, virustotal
 
 
 def validate_ip(raw):
@@ -46,23 +46,28 @@ def validate_ip(raw):
     return True, str(parsed)
 
 
-def decide_verdict(abuse, vt):
+def decide_verdict(abuse, vt, otx=None):
     """Combine the intel results into one verdict plus a plain-English reason.
 
     Rules, in priority order:
-      1. Either source calling it malicious outright  -> MALICIOUS
+      1. Any source calling it malicious outright     -> MALICIOUS
       2. Moderate abuse score, or any engine flagging -> SUSPICIOUS
       3. Nothing flagged                              -> CLEAN
 
     A single source is enough to escalate. In triage, missing a real threat
     costs far more than investigating a false positive.
+
+    *otx* is optional -- OTX is a third opinion, not a required source.
     """
+    otx = otx or {"available": False}
+
     reasons = []
     verdict = database.VERDICT_CLEAN
 
     abuse_score = abuse.get("abuse_score", 0) if abuse.get("available") else None
     vt_malicious = vt.get("malicious", 0) if vt.get("available") else None
     vt_suspicious = vt.get("suspicious", 0) if vt.get("available") else None
+    otx_pulses = otx.get("pulse_count", 0) if otx.get("available") else None
 
     # ---------------------------------------------------------- malicious
     if abuse_score is not None and abuse_score >= config.ABUSE_SCORE_MALICIOUS:
@@ -76,6 +81,13 @@ def decide_verdict(abuse, vt):
         verdict = database.VERDICT_MALICIOUS
         reasons.append(f"{vt_malicious} VirusTotal engines flag this IP as malicious")
 
+    if otx_pulses is not None and otx_pulses >= config.OTX_PULSE_MALICIOUS:
+        verdict = database.VERDICT_MALICIOUS
+        reasons.append(
+            f"Appears in {otx_pulses} OTX threat pulses -- reported across "
+            f"multiple independent investigations"
+        )
+
     # --------------------------------------------------------- suspicious
     if verdict != database.VERDICT_MALICIOUS:
         if abuse_score is not None and abuse_score >= config.ABUSE_SCORE_SUSPICIOUS:
@@ -87,7 +99,14 @@ def decide_verdict(abuse, vt):
             flagged = (vt_malicious or 0) + (vt_suspicious or 0)
             reasons.append(f"{flagged} VirusTotal engine(s) flagged this IP")
 
+        if otx_pulses:
+            verdict = database.VERDICT_SUSPICIOUS
+            reasons.append(f"Appears in {otx_pulses} OTX threat pulse(s)")
+
     # --------------------------------------------------- supporting notes
+    if otx.get("available") and otx.get("pulse_names"):
+        reasons.append("OTX campaigns: " + ", ".join(otx["pulse_names"][:3]))
+
     if abuse.get("available"):
         if abuse.get("is_tor"):
             reasons.append("Listed as a Tor exit node")
@@ -122,9 +141,10 @@ def scan(raw_ip):
     # one service being down never takes the whole scan with it.
     abuse = abuseipdb.check_ip(ip)
     vt = virustotal.check_ip(ip)
+    otx_result = otx.check_ip(ip)
     geo = geolocation.lookup(ip)
 
-    verdict, reasons = decide_verdict(abuse, vt)
+    verdict, reasons = decide_verdict(abuse, vt, otx_result)
 
     # Record which sources actually answered, for the audit trail.
     sources = []
@@ -132,6 +152,8 @@ def scan(raw_ip):
         sources.append("AbuseIPDB")
     if vt.get("available"):
         sources.append("VirusTotal")
+    if otx_result.get("available"):
+        sources.append("OTX")
     if geo.get("available"):
         sources.append("ip-api")
     source_label = ", ".join(sources) if sources else "None"
@@ -151,6 +173,7 @@ def scan(raw_ip):
         "reasons": reasons,
         "abuse": abuse,
         "virustotal": vt,
+        "otx": otx_result,
         "geo": geo,
         "sources": source_label,
     }

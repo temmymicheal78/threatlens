@@ -102,6 +102,47 @@
     {% endif %}
   </section>
 
+  <!-- ------------------------------------------------ AlienVault OTX -->
+  <section class="panel">
+    <h2 class="panel-title">AlienVault OTX</h2>
+    {% if result.otx and result.otx.available %}
+    <div class="score-ring {{ 'high' if result.otx.pulse_count >= 3 else ('mid' if result.otx.pulse_count else 'low') }}">
+      {{ result.otx.pulse_count }}
+    </div>
+    <p class="score-caption">Community threat pulses</p>
+    <table>
+      <tbody>
+        <tr><td>Reputation</td><td class="mono">{{ result.otx.reputation }}</td></tr>
+        <tr><td>Country</td><td>{{ result.otx.country or '&mdash;'|safe }}</td></tr>
+        <tr><td>ASN</td><td class="mono">{{ result.otx.asn or '&mdash;'|safe }}</td></tr>
+      </tbody>
+    </table>
+
+    {% if result.otx.pulse_names %}
+    <p class="score-caption" style="margin-top:16px">Reported in campaigns</p>
+    <div class="url-list">
+      {% for name in result.otx.pulse_names %}
+      <div class="url-item">{{ name }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if result.otx.tags %}
+    <p class="score-caption" style="margin-top:16px">Tags</p>
+    <div class="engine-list">
+      {% for tag in result.otx.tags %}
+      <span class="engine-chip">{{ tag }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="unavailable">
+      {{ result.otx.error if result.otx else 'Not configured' }}
+    </div>
+    {% endif %}
+  </section>
+
   <!-- ---------------------------------------------------- Geolocation -->
   <section class="panel">
     <h2 class="panel-title">Geolocation</h2>

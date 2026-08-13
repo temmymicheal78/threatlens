@@ -54,6 +54,8 @@ Reputation and geolocation for any public IPv4 or IPv6 address.
   distinct reporters, Tor exit node status
 - **VirusTotal** &mdash; how many of ~90 engines classify the address as
   malicious
+- **AlienVault OTX** &mdash; community threat pulses, naming the campaigns
+  the address has been reported under
 - **ip-api.com** &mdash; country, city, ISP, ASN, organisation
 
 ### URL / Domain Scanner
@@ -120,6 +122,7 @@ through the code:
 | AbuseIPDB malicious | &ge; 50% | Validated across 20 dissertation trials with zero false positives |
 | AbuseIPDB suspicious | &ge; 20% | Elevated but inconclusive |
 | VirusTotal malicious | &ge; 3 engines | Single-engine hits are frequently false positives |
+| OTX malicious | &ge; 3 pulses | One pulse may be a single researcher's sweep; several mean the address keeps resurfacing independently |
 | Domain age high risk | &lt; 7 days | Phishing infrastructure is typically days old |
 | Domain age suspicious | &lt; 30 days | Legitimate businesses rarely operate on brand-new domains |
 
@@ -207,11 +210,36 @@ tells you which sources are unavailable, rather than failing.
 
 ---
 
+## Testing
+
+```bash
+pip install pytest
+python -m pytest tests -q
+```
+
+**155 tests**, covering input validation, verdict logic for all four
+indicator types, database persistence and filtering, and every route.
+
+The suite makes **no network calls**. Verdict functions are pure &mdash;
+they take intelligence responses as plain dictionaries and return a verdict
+&mdash; so every decision path is tested deterministically without API keys,
+rate limits, or an internet connection.
+
+Two guard tests in `tests/test_safety.py` assert that the suite is writing to
+a throwaway database and that the real scan history is untouched. Without
+them, running the tests would quietly write test data into real scan
+records.
+
+The suite has already earned its place: it caught an ordering bug where two
+scans saved within the same second were returned newest-last, because
+second-precision timestamps made `ORDER BY scanned_at` ambiguous.
+
 ## Tech stack
 
 **Backend:** Python, Flask, SQLite
-**Frontend:** HTML5, CSS3, Jinja2 templates
-**Intelligence:** AbuseIPDB, VirusTotal, ip-api.com, WHOIS
+**Frontend:** HTML5, CSS3, Jinja2 templates, Chart.js
+**Intelligence:** AbuseIPDB, VirusTotal, AlienVault OTX, ip-api.com, WHOIS
+**Testing:** pytest
 **Deployment:** gunicorn on Render
 
 ---

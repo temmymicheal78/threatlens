@@ -128,7 +128,9 @@ def get_recent_scans(limit=10):
         """
         SELECT indicator, indicator_type AS type, verdict, source, scanned_at
         FROM scans
-        ORDER BY scanned_at DESC
+        -- id breaks ties: timestamps are second-precision, so two scans in
+        -- the same second would otherwise come back in arbitrary order.
+        ORDER BY scanned_at DESC, id DESC
         LIMIT ?
         """,
         (limit,),
@@ -169,7 +171,8 @@ def search_scans(indicator_type=None, verdict=None, query=None, limit=300):
         sql.append("AND indicator LIKE ?")
         params.append(f"%{query}%")
 
-    sql.append("ORDER BY scanned_at DESC LIMIT ?")
+    # id breaks ties between scans saved within the same second.
+    sql.append("ORDER BY scanned_at DESC, id DESC LIMIT ?")
     params.append(limit)
 
     conn = get_connection()
