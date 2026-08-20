@@ -7,8 +7,10 @@ with a plain-English explanation of how that verdict was reached.
 
 Built to mirror the daily triage work of a SOC analyst.
 
-<!-- After deploying, replace the line below with your live URL -->
-<!-- **Live demo:** https://threatlens.onrender.com -->
+**Live demo:** https://threatlens-bujj.onrender.com
+
+*Hosted on Render's free tier, which sleeps after 15 minutes of inactivity
+&mdash; the first request after a pause takes around 30 seconds to wake.*
 
 ---
 
@@ -299,6 +301,12 @@ Honest constraints of the current build:
   message alone.
 - **WHOIS coverage is uneven.** Some registries and privacy services return
   sparse records, so domain age is not always available.
+- **Cold starts on the hosted demo.** The free tier sleeps after 15 minutes
+  idle, so the first request after a pause takes about 30 seconds. This is a
+  hosting cost decision, not an application characteristic.
+- **Intelligence lookups run sequentially.** A worst-case IP scan queries
+  four services one after another and can take up to 55 seconds. Running
+  them concurrently would cut this to the slowest single source.
 - **No authentication.** The app is a single-user analysis tool with no
   login layer.
 
