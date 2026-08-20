@@ -97,6 +97,20 @@ def decide_verdict(vt, whois_data):
                 f"registered domains are a common phishing indicator"
             )
 
+    # ------------------------------------------- nothing could be consulted
+    # VirusTotal is the only reputation source here; WHOIS supplies context,
+    # not a verdict. Without VT nothing has actually checked the URL, so
+    # CLEAN would be a false reassurance.
+    if not vt.get("available"):
+        if verdict == database.VERDICT_CLEAN:
+            verdict = database.VERDICT_SUSPICIOUS
+        reasons.append(
+            "VirusTotal could not be reached, so this URL's reputation was "
+            "never assessed -- this is not a clean result"
+        )
+        if vt.get("error"):
+            reasons.append(f"VirusTotal: {vt['error']}")
+
     # --------------------------------------------------- supporting notes
     if whois_data.get("available"):
         if age_days is not None and age_days >= config.DOMAIN_AGE_SUSPICIOUS_DAYS:

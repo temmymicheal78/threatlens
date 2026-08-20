@@ -26,7 +26,7 @@ def check_ip(ip):
     url = f"{config.OTX_IP_URL}/{ip}/general"
 
     try:
-        response = requests.get(url, headers=headers, timeout=config.REQUEST_TIMEOUT)
+        response = requests.get(url, headers=headers, timeout=config.OTX_TIMEOUT)
     except requests.RequestException as exc:
         return {"available": False, "error": f"Connection failed: {exc}"}
 

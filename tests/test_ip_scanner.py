@@ -114,10 +114,34 @@ def test_either_source_alone_can_escalate():
     assert from_vt == database.VERDICT_MALICIOUS
 
 
-def test_no_sources_available_yields_clean_with_explanation():
-    verdict, reasons = decide_verdict(UNAVAILABLE, UNAVAILABLE)
+def test_no_sources_available_is_never_reported_as_clean():
+    """The most dangerous failure mode a triage tool has.
+
+    If every lookup fails -- rate limit, outage, missing key -- nothing has
+    actually checked the address. Reporting CLEAN would tell an analyst it
+    is safe on the strength of no evidence whatsoever.
+    """
+    verdict, reasons = decide_verdict(UNAVAILABLE, UNAVAILABLE, UNAVAILABLE)
+    assert verdict == database.VERDICT_SUSPICIOUS
+    assert any("not a clean result" in r for r in reasons)
+
+
+def test_failure_reasons_name_the_source_that_failed():
+    """An analyst needs to know *why* the scan could not be completed."""
+    _, reasons = decide_verdict(
+        {"available": False, "error": "Rate limit reached"},
+        {"available": False, "error": "Invalid API key"},
+        {"available": False, "error": "Connection failed"},
+    )
+    joined = " ".join(reasons)
+    assert "AbuseIPDB: Rate limit reached" in joined
+    assert "VirusTotal: Invalid API key" in joined
+
+
+def test_one_working_source_reporting_nothing_is_genuinely_clean():
+    """A source that answered and found nothing is real evidence."""
+    verdict, _ = decide_verdict(abuse(0), UNAVAILABLE, UNAVAILABLE)
     assert verdict == database.VERDICT_CLEAN
-    assert reasons
 
 
 def test_tor_exit_node_is_reported():

@@ -92,14 +92,21 @@ verdicts.
 
 ## Screenshots
 
-<!--
-  Take screenshots of each page, save them into a docs/ folder, and
-  uncomment the lines below. Recruiters look at these before the code.
--->
+**Dashboard** &mdash; verdict share, indicator types, and 14-day scan activity
+over real scan history.
 
-<!-- ![Dashboard](docs/dashboard.png) -->
-<!-- ![IP Scanner](docs/ip-scanner.png) -->
-<!-- ![Email Analyzer](docs/email-analyzer.png) -->
+![ThreatLens dashboard showing scan statistics and three charts](docs/dashboard.png)
+
+**IP Scanner** &mdash; a live scan of `185.220.101.10`, a Tor exit node.
+AbuseIPDB, VirusTotal and AlienVault OTX all agree, and every panel explains
+what it contributed to the verdict.
+
+![IP scanner result showing a malicious verdict with AbuseIPDB, VirusTotal and OTX detail](docs/ip-scanner.png)
+
+**Email Analyzer** &mdash; a phishing sample failing SPF, DKIM and DMARC, with
+sender spoofing, urgency language and embedded URLs broken out.
+
+![Email analyzer showing SPF, DKIM and DMARC failures on a phishing message](docs/email-analyzer.png)
 
 ---
 

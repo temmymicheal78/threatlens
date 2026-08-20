@@ -103,6 +103,20 @@ def decide_verdict(abuse, vt, otx=None):
             verdict = database.VERDICT_SUSPICIOUS
             reasons.append(f"Appears in {otx_pulses} OTX threat pulse(s)")
 
+    # ------------------------------------------- nothing could be consulted
+    # A failed lookup is not a pass. Returning CLEAN when no source answered
+    # would tell an analyst an address is safe when nothing actually checked
+    # it -- the most dangerous thing a triage tool can do.
+    if not any(source.get("available") for source in (abuse, vt, otx)):
+        verdict = database.VERDICT_SUSPICIOUS
+        reasons.append(
+            "No threat intelligence source could be reached, so this address "
+            "was never assessed -- this is not a clean result"
+        )
+        for name, source in (("AbuseIPDB", abuse), ("VirusTotal", vt), ("OTX", otx)):
+            if source.get("error"):
+                reasons.append(f"{name}: {source['error']}")
+
     # --------------------------------------------------- supporting notes
     if otx.get("available") and otx.get("pulse_names"):
         reasons.append("OTX campaigns: " + ", ".join(otx["pulse_names"][:3]))

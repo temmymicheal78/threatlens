@@ -34,6 +34,11 @@ GEOLOCATION_URL = "http://ip-api.com/json"
 # Seconds to wait on any threat intel API before giving up.
 REQUEST_TIMEOUT = 10
 
+# OTX aggregates community pulses at request time and is consistently slower
+# than the others, so it gets a longer allowance. Ten seconds times it out on
+# well-reported addresses -- exactly the ones worth waiting for.
+OTX_TIMEOUT = 25
+
 
 # --------------------------------------------------------------- thresholds
 # An AbuseIPDB confidence score at or above this is treated as malicious.

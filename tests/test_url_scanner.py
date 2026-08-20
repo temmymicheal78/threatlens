@@ -120,6 +120,29 @@ def test_flagging_engines_are_named():
     assert any("Kaspersky" in r for r in reasons)
 
 
+def test_virustotal_unreachable_is_never_reported_as_clean():
+    """VirusTotal is the only reputation source for a URL.
+
+    Without it nothing has checked the URL, so CLEAN would be a false
+    reassurance built on a failed request.
+    """
+    verdict, reasons = decide_verdict(UNAVAILABLE, whois(4000))
+    assert verdict == database.VERDICT_SUSPICIOUS
+    assert any("not a clean result" in r for r in reasons)
+
+
+def test_virustotal_failure_reason_is_named():
+    _, reasons = decide_verdict(
+        {"available": False, "error": "Rate limit reached"}, whois(4000)
+    )
+    assert any("Rate limit reached" in r for r in reasons)
+
+
+def test_working_virustotal_with_no_detections_is_genuinely_clean():
+    verdict, _ = decide_verdict(vt(), whois(4000))
+    assert verdict == database.VERDICT_CLEAN
+
+
 def test_verdict_always_has_reasons():
     for v, w in [(vt(malicious=12), whois(2000)), (vt(), whois(3)),
                  (vt(), whois(4000)), (UNAVAILABLE, UNAVAILABLE)]:
