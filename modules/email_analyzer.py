@@ -28,6 +28,13 @@ RECEIVED_IP_PATTERN = re.compile(r"[\[\(](\d{1,3}(?:\.\d{1,3}){3})[\]\)]")
 # Fallback for Received headers that write the IP bare, without brackets.
 BARE_IP_PATTERN = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b")
 
+# The sending IP as determined by the receiving server itself. Written into
+# Received-SPF and Authentication-Results; Microsoft uses "sender-ip".
+CLIENT_IP_PATTERN = re.compile(
+    r"\b(?:client-ip|sender-ip)\s*=\s*[\"']?(\d{1,3}(?:\.\d{1,3}){3})",
+    re.IGNORECASE,
+)
+
 # "from <host>" and "by <host>" in a Received header.
 RECEIVED_FROM_PATTERN = re.compile(r"\bfrom\s+([^\s;()\[\]]+)", re.IGNORECASE)
 RECEIVED_BY_PATTERN = re.compile(r"\bby\s+([^\s;()\[\]]+)", re.IGNORECASE)
@@ -158,26 +165,51 @@ def check_spoofing(message):
     }
 
 
-def extract_origin_ip(message):
-    """Find the IP the message originated from.
+def extract_origin(message):
+    """Determine which IP actually sent the message, and say how we know.
 
-    Received headers stack newest-first, so the *last* one is the earliest
-    hop -- closest to the true sender. Private IPs are skipped because they
-    are internal relays, not the originator.
+    Two sources, in order of trust:
+
+    1. ``client-ip`` in Received-SPF or Authentication-Results. This is the
+       receiving server stating the address it evaluated SPF against -- an
+       authoritative answer from infrastructure we trust, not a guess.
+    2. The earliest Received hop. Used only when no client-ip is published.
+
+    Preferring client-ip fixes a real failure: when mail is relayed through
+    a legitimate provider such as Microsoft 365 or Gmail, walking the hops
+    for the first *public* address lands on the provider's own relay. The
+    tool would then report a clean reputation for an innocent middleman and
+    present it as the sender, which is worse than saying nothing.
+
+    Returns {"ip": str|None, "source": str|None}.
     """
-    received = message.get_all("Received") or []
+    for header_name in ("Received-SPF", "Authentication-Results"):
+        for header in message.get_all(header_name) or []:
+            match = CLIENT_IP_PATTERN.search(header)
+            if match:
+                try:
+                    ipaddress.ip_address(match.group(1))
+                except ValueError:
+                    continue
+                return {"ip": match.group(1), "source": f"{header_name} client-ip"}
 
-    for header in reversed(received):
+    # Fall back to the earliest hop. Internal relays and loopback are skipped
+    # -- they carry no information about an external sender -- but reserved
+    # documentation ranges are kept, because in a training or test capture
+    # they *are* the sender and hiding them loses the answer entirely.
+    for header in reversed(message.get_all("Received") or []):
         for candidate in RECEIVED_IP_PATTERN.findall(header):
-            try:
-                parsed = ipaddress.ip_address(candidate)
-            except ValueError:
+            kind = classify_ip(candidate)
+            if kind in ("internal", "loopback", "unknown"):
                 continue
-            if parsed.is_private or parsed.is_loopback or parsed.is_reserved:
-                continue
-            return candidate
+            return {"ip": candidate, "source": "earliest Received hop"}
 
-    return None
+    return {"ip": None, "source": None}
+
+
+def extract_origin_ip(message):
+    """The originating IP alone, for callers that do not need the source."""
+    return extract_origin(message)["ip"]
 
 
 def classify_ip(address):
@@ -382,16 +414,26 @@ def analyze(raw_text):
 
     auth = check_authentication(message)
     spoofing = check_spoofing(message)
-    origin_ip = extract_origin_ip(message)
+    origin = extract_origin(message)
+    origin_ip = origin["ip"]
     mail_path = extract_mail_path(message)
     urls = extract_urls(raw_text)
     keywords = check_subject_keywords(message)
 
-    # Reuse the Week 2 AbuseIPDB client for the sending server's reputation.
-    origin_reputation = (
-        abuseipdb.check_ip(origin_ip) if origin_ip else {"available": False,
-                                                         "error": "No originating IP found in headers"}
-    )
+    # Reuse the Week 2 AbuseIPDB client for the sending server's reputation,
+    # but only for addresses that route. Looking up an internal relay or a
+    # documentation range returns nothing useful and burns an API call.
+    if not origin_ip:
+        origin_reputation = {"available": False,
+                             "error": "No originating IP found in headers"}
+    elif classify_ip(origin_ip) != "public":
+        origin_reputation = {
+            "available": False,
+            "error": (f"{origin_ip} is a {classify_ip(origin_ip)} address, "
+                      f"so no public reputation exists for it"),
+        }
+    else:
+        origin_reputation = abuseipdb.check_ip(origin_ip)
 
     verdict, reasons = decide_verdict(auth, spoofing, origin_reputation, keywords, urls)
 
@@ -416,6 +458,8 @@ def analyze(raw_text):
         "auth": auth,
         "spoofing": spoofing,
         "origin_ip": origin_ip,
+        "origin_source": origin["source"],
+        "origin_kind": classify_ip(origin_ip) if origin_ip else None,
         "origin_reputation": origin_reputation,
         "mail_path": mail_path,
         "urls": urls,

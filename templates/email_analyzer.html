@@ -106,7 +106,18 @@ Outlook: open the email -> File -> Properties -> Internet headers">{{ submitted 
     {% if result.origin_ip %}
     <table>
       <tbody>
-        <tr><td>Sending IP</td><td class="mono">{{ result.origin_ip }}</td></tr>
+        <tr>
+          <td>Sending IP</td>
+          <td class="mono">
+            {{ result.origin_ip }}
+            {% if result.origin_kind %}
+            <span class="ip-tag ip-{{ result.origin_kind }}">{{ result.origin_kind }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% if result.origin_source %}
+        <tr><td>Determined from</td><td class="muted">{{ result.origin_source }}</td></tr>
+        {% endif %}
         {% if result.origin_reputation.available %}
         <tr>
           <td>Abuse score</td>

@@ -4,6 +4,7 @@ import pytest
 
 import database
 from modules.email_analyzer import (
+    extract_origin,
     classify_ip,
     extract_mail_path,
     check_authentication,
@@ -191,16 +192,81 @@ def test_no_received_headers_gives_an_empty_path():
     assert extract_mail_path(message) == []
 
 
-def test_origin_ip_and_mail_path_can_disagree():
-    """A real difference worth understanding.
+def test_documentation_range_is_reported_as_the_origin():
+    """In a training capture the documentation range *is* the sender.
 
-    extract_origin_ip skips anything Python calls private -- which includes
-    documentation ranges -- so it finds no origin here. The mail path still
-    shows every hop, which is exactly why both exist.
+    Skipping it, as an earlier version did, threw away the answer entirely.
     """
     _, message = parse_email(GOLDEN_INVOICE)
-    assert extract_origin_ip(message) is None
-    assert len(extract_mail_path(message)) == 3
+    assert extract_origin_ip(message) == "203.0.113.77"
+
+
+# --------------------------------------------------- origin determination
+# A relayed message: the true sender is 203.0.113.77, but the mail passes
+# through Microsoft 365 on the way, so the earliest *public* hop belongs to
+# Microsoft rather than the attacker.
+RELAYED = (
+    "Received: from MW4NAM10FT021.eop-NAM10.prod.protection.outlook.com"
+    " (unknown [40.93.15.201]) by mx.example.com with ESMTP;"
+    " Mon, 10 Aug 2026 09:17:59 +0100\n"
+    "Received: from mail.payhub-notify-secure.com"
+    " (mail.payhub-notify-secure.com [203.0.113.77]) by"
+    " MW4NAM10FT021.eop-NAM10.prod.protection.outlook.com with ESMTP;"
+    " Mon, 10 Aug 2026 09:15:31 +0100\n"
+    "Received-SPF: Fail (domain does not designate 203.0.113.77 as permitted"
+    " sender) client-ip=203.0.113.77;"
+    " envelope-from=no-reply@payhub-notify-secure.com;\n"
+    "From: \"PayHub Invoicing\" <no-reply@payhub-notify-secure.com>\n"
+    "Subject: Invoice overdue\n"
+)
+
+
+def test_client_ip_is_preferred_over_walking_the_hops():
+    """The receiving server's own determination beats our reconstruction.
+
+    Without this, the earliest public hop is Microsoft's relay, and the tool
+    reports an innocent middleman as the sender.
+    """
+    _, message = parse_email(RELAYED)
+    origin = extract_origin(message)
+
+    assert origin["ip"] == "203.0.113.77"
+    assert origin["ip"] != "40.93.15.201"
+    assert "client-ip" in origin["source"]
+
+
+def test_hop_walking_is_used_when_no_client_ip_is_published():
+    _, message = parse_email(
+        "Received: from evil.example (evil.example [8.8.4.4]) by mx.example.com"
+        " with ESMTP; Mon, 10 Aug 2026 09:15:31 +0100\n"
+        "From: a@b.com\nSubject: Hello\n"
+    )
+    origin = extract_origin(message)
+    assert origin["ip"] == "8.8.4.4"
+    assert origin["source"] == "earliest Received hop"
+
+
+def test_sender_ip_spelling_is_also_recognised():
+    """Microsoft writes sender-ip rather than client-ip."""
+    _, message = parse_email(
+        "Authentication-Results: spf=fail sender-ip=203.0.113.99;\n"
+        "From: a@b.com\nSubject: Hello\n"
+    )
+    assert extract_origin(message)["ip"] == "203.0.113.99"
+
+
+def test_no_headers_gives_no_origin_and_no_source():
+    _, message = parse_email("From: a@b.com\nSubject: Hello\n")
+    assert extract_origin(message) == {"ip": None, "source": None}
+
+
+def test_internal_relays_are_never_reported_as_the_origin():
+    _, message = parse_email(
+        "Received: from relay (relay [10.0.0.5]) by mx.example.com with ESMTP;"
+        " Mon, 10 Aug 2026 09:15:31 +0100\n"
+        "From: a@b.com\nSubject: Hello\n"
+    )
+    assert extract_origin(message)["ip"] is None
 
 
 # --------------------------------------------------------------------- URLs
