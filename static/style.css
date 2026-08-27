@@ -640,3 +640,49 @@ tbody tr:hover { background: rgba(0, 255, 136, 0.04); }
 }
 
 .nowrap { white-space: nowrap; }
+
+/* ------------------------------------------------------- mail path */
+.panel-note {
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+  margin: 0 0 14px;
+}
+
+.panel-note:last-child {
+  margin: 14px 0 0;
+}
+
+.ip-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-family: inherit;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+}
+
+/* Public addresses are the only ones a reputation lookup can speak to,
+   so they are the ones drawn to catch the eye. */
+.ip-public {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.ip-internal {
+  color: var(--muted);
+  border-color: var(--border);
+}
+
+.ip-documentation {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.ip-loopback {
+  color: var(--muted);
+  border-color: var(--border);
+}

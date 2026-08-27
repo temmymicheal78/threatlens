@@ -25,6 +25,23 @@ AUTH_PATTERN = re.compile(r"\b(spf|dkim|dmarc)\s*=\s*(\w+)", re.IGNORECASE)
 # Any IPv4 address wrapped in brackets or parentheses in a Received header.
 RECEIVED_IP_PATTERN = re.compile(r"[\[\(](\d{1,3}(?:\.\d{1,3}){3})[\]\)]")
 
+# Fallback for Received headers that write the IP bare, without brackets.
+BARE_IP_PATTERN = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b")
+
+# "from <host>" and "by <host>" in a Received header.
+RECEIVED_FROM_PATTERN = re.compile(r"\bfrom\s+([^\s;()\[\]]+)", re.IGNORECASE)
+RECEIVED_BY_PATTERN = re.compile(r"\bby\s+([^\s;()\[\]]+)", re.IGNORECASE)
+
+# Ranges reserved for documentation and examples (RFC 5737). Python's
+# ipaddress module reports these as private, which is right for routing but
+# hides a useful distinction: an internal relay and a training placeholder
+# are not the same thing to an analyst.
+DOCUMENTATION_NETWORKS = (
+    ipaddress.ip_network("192.0.2.0/24"),
+    ipaddress.ip_network("198.51.100.0/24"),
+    ipaddress.ip_network("203.0.113.0/24"),
+)
+
 # URLs in the body. Deliberately broad -- we want to see everything.
 URL_PATTERN = re.compile(r"https?://[^\s<>\"'\)\]]+", re.IGNORECASE)
 
@@ -163,6 +180,76 @@ def extract_origin_ip(message):
     return None
 
 
+def classify_ip(address):
+    """Describe what kind of address this is, in an analyst's terms.
+
+    Returns one of: 'public', 'internal', 'documentation', 'loopback'.
+    Documentation ranges are separated out because Python reports them as
+    private, which would otherwise hide them among genuine internal relays.
+    """
+    try:
+        parsed = ipaddress.ip_address(address)
+    except ValueError:
+        return "unknown"
+
+    if parsed.is_loopback:
+        return "loopback"
+    if any(parsed in network for network in DOCUMENTATION_NETWORKS):
+        return "documentation"
+    if parsed.is_private or parsed.is_reserved:
+        return "internal"
+    return "public"
+
+
+def extract_mail_path(message):
+    """Rebuild the journey the message took, oldest hop first.
+
+    Received headers are added by each server as the message passes through,
+    newest on top. Reversing them gives the path in the order it actually
+    happened, which is how an analyst reads it: origin at hop 1, recipient's
+    own infrastructure at the end.
+
+    Every hop is returned, including internal ones. extract_origin_ip picks a
+    single address for reputation lookups; this shows the whole chain so the
+    analyst can see the route and spot anomalies in it.
+    """
+    received = message.get_all("Received") or []
+    hops = []
+
+    for position, header in enumerate(reversed(received), start=1):
+        text = " ".join(header.split())          # unfold and normalise spacing
+
+        ip = None
+        match = RECEIVED_IP_PATTERN.search(text)
+        if match:
+            ip = match.group(1)
+        else:
+            bare = BARE_IP_PATTERN.search(text)
+            if bare:
+                ip = bare.group(1)
+
+        from_match = RECEIVED_FROM_PATTERN.search(text)
+        by_match = RECEIVED_BY_PATTERN.search(text)
+
+        # The timestamp is conventionally the last semicolon-separated field.
+        timestamp = None
+        if ";" in text:
+            candidate = text.rsplit(";", 1)[1].strip()
+            if candidate:
+                timestamp = candidate
+
+        hops.append({
+            "position": position,
+            "from_host": from_match.group(1) if from_match else None,
+            "by_host": by_match.group(1) if by_match else None,
+            "ip": ip,
+            "ip_kind": classify_ip(ip) if ip else None,
+            "timestamp": timestamp,
+        })
+
+    return hops
+
+
 def extract_urls(raw_text, limit=15):
     """Pull every URL out of the raw message, de-duplicated."""
     found = []
@@ -296,6 +383,7 @@ def analyze(raw_text):
     auth = check_authentication(message)
     spoofing = check_spoofing(message)
     origin_ip = extract_origin_ip(message)
+    mail_path = extract_mail_path(message)
     urls = extract_urls(raw_text)
     keywords = check_subject_keywords(message)
 
@@ -329,6 +417,7 @@ def analyze(raw_text):
         "spoofing": spoofing,
         "origin_ip": origin_ip,
         "origin_reputation": origin_reputation,
+        "mail_path": mail_path,
         "urls": urls,
         "keywords": keywords,
         "subject": message.get("Subject"),

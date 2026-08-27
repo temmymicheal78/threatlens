@@ -4,6 +4,8 @@ import pytest
 
 import database
 from modules.email_analyzer import (
+    classify_ip,
+    extract_mail_path,
     check_authentication,
     check_spoofing,
     check_subject_keywords,
@@ -105,6 +107,100 @@ def test_private_relay_addresses_are_skipped(phishing_email):
 def test_no_received_headers_yields_no_ip():
     _, message = parse_email("From: a@b.com\nSubject: Hello\n")
     assert extract_origin_ip(message) is None
+
+
+# ---------------------------------------------------------------- mail path
+# Headers taken from the "Golden Invoice" SOC training scenario: a three-hop
+# chain mixing an external sender, a relay, and an internal NHS server.
+GOLDEN_INVOICE = (
+    "Received: from mx01.brackenmoor.nhs.uk (10.24.8.15) by"
+    " mailstore01.brackenmoor.nhs.uk with ESMTP id STORE88217;"
+    " Mon, 25 Aug 2026 09:16:41 +0100\n"
+    "Received: from outbound01.payhub-notify-secure.com (198.51.100.42) by"
+    " mx01.brackenmoor.nhs.uk with ESMTPS id BMNHS88217;"
+    " Mon, 25 Aug 2026 09:16:39 +0100\n"
+    "Received: from mail.payhub-notify-secure.com"
+    " (mail.payhub-notify-secure.com [203.0.113.77]) by"
+    " outbound01.payhub-notify-secure.com with ESMTP id GINV01;"
+    " Mon, 25 Aug 2026 08:14:31 +0000\n"
+    "From: \"PayHub Invoicing\" <no-reply@payhub-notify-secure.com>\n"
+    "Subject: Invoice INV-33421 Shared With You\n"
+)
+
+
+@pytest.mark.parametrize("address,expected", [
+    ("8.8.8.8", "public"),
+    ("40.93.15.201", "public"),
+    ("10.24.8.15", "internal"),
+    ("192.168.1.1", "internal"),
+    ("127.0.0.1", "loopback"),
+    ("203.0.113.77", "documentation"),
+    ("198.51.100.42", "documentation"),
+    ("192.0.2.1", "documentation"),
+])
+def test_ip_classification(address, expected):
+    """Documentation ranges must be told apart from genuine internal relays.
+
+    Python reports both as private, which is correct for routing but hides a
+    distinction that matters: a training placeholder is not an internal hop.
+    """
+    assert classify_ip(address) == expected
+
+
+def test_mail_path_is_ordered_oldest_hop_first():
+    """Received headers stack newest-first, so the path must be reversed."""
+    _, message = parse_email(GOLDEN_INVOICE)
+    path = extract_mail_path(message)
+
+    assert [hop["position"] for hop in path] == [1, 2, 3]
+    assert path[0]["ip"] == "203.0.113.77"
+    assert path[-1]["ip"] == "10.24.8.15"
+
+
+def test_mail_path_returns_every_hop_including_internal():
+    """Unlike extract_origin_ip, nothing is skipped -- the analyst sees it all."""
+    _, message = parse_email(GOLDEN_INVOICE)
+    assert len(extract_mail_path(message)) == 3
+
+
+def test_mail_path_records_hosts_and_timestamp():
+    _, message = parse_email(GOLDEN_INVOICE)
+    first = extract_mail_path(message)[0]
+
+    assert first["from_host"] == "mail.payhub-notify-secure.com"
+    assert first["by_host"] == "outbound01.payhub-notify-secure.com"
+    assert first["timestamp"] == "Mon, 25 Aug 2026 08:14:31 +0000"
+
+
+def test_mail_path_labels_each_address_type():
+    _, message = parse_email(GOLDEN_INVOICE)
+    kinds = [hop["ip_kind"] for hop in extract_mail_path(message)]
+    assert kinds == ["documentation", "documentation", "internal"]
+
+
+def test_mail_path_handles_bracketed_and_bare_ip_formats():
+    """Hop 1 writes the IP in brackets, hop 2 in bare parentheses."""
+    _, message = parse_email(GOLDEN_INVOICE)
+    path = extract_mail_path(message)
+    assert path[0]["ip"] == "203.0.113.77"      # [203.0.113.77]
+    assert path[1]["ip"] == "198.51.100.42"     # (198.51.100.42)
+
+
+def test_no_received_headers_gives_an_empty_path():
+    _, message = parse_email("From: a@b.com\nSubject: Hello\n")
+    assert extract_mail_path(message) == []
+
+
+def test_origin_ip_and_mail_path_can_disagree():
+    """A real difference worth understanding.
+
+    extract_origin_ip skips anything Python calls private -- which includes
+    documentation ranges -- so it finds no origin here. The mail path still
+    shows every hop, which is exactly why both exist.
+    """
+    _, message = parse_email(GOLDEN_INVOICE)
+    assert extract_origin_ip(message) is None
+    assert len(extract_mail_path(message)) == 3
 
 
 # --------------------------------------------------------------------- URLs

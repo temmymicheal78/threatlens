@@ -135,6 +135,58 @@ Outlook: open the email -> File -> Properties -> Internet headers">{{ submitted 
 
 </div>
 
+<!-- -------------------------------------------------------- mail path -->
+{% if result.mail_path %}
+<section class="panel">
+  <h2 class="panel-title">Mail Path ({{ result.mail_path|length }} hop{{ '' if result.mail_path|length == 1 else 's' }})</h2>
+  <p class="panel-note">
+    Every server the message passed through, in the order it travelled.
+    Hop 1 is closest to the sender; the last hop is the recipient's own
+    infrastructure. Reputation checks use the earliest public address only.
+  </p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Hop</th>
+          <th>Received from</th>
+          <th>IP address</th>
+          <th>Handed to</th>
+          <th>Timestamp</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for hop in result.mail_path %}
+        <tr>
+          <td class="mono">{{ hop.position }}</td>
+          <td class="mono break">{{ hop.from_host or '&mdash;'|safe }}</td>
+          <td class="mono">
+            {% if hop.ip %}
+              {{ hop.ip }}
+              <span class="ip-tag ip-{{ hop.ip_kind }}">{{ hop.ip_kind }}</span>
+            {% else %}
+              &mdash;
+            {% endif %}
+          </td>
+          <td class="mono break">{{ hop.by_host or '&mdash;'|safe }}</td>
+          <td class="muted nowrap">{{ hop.timestamp or '&mdash;'|safe }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="panel-note">
+    <strong>public</strong> routes on the internet &middot;
+    <strong>internal</strong> is a private relay (RFC 1918) &middot;
+    <strong>documentation</strong> is a reserved example range (RFC 5737) that
+    never routes &middot; <strong>loopback</strong> is the machine itself.
+    Only public addresses carry a meaningful reputation.
+  </p>
+</section>
+{% endif %}
+
 <!-- ------------------------------------------------------ found URLs -->
 {% if result.urls %}
 <section class="panel">
