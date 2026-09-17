@@ -143,6 +143,52 @@
     {% endif %}
   </section>
 
+  <!-- -------------------------------------------------- Anonymisation -->
+  {% if result.anonymisation %}
+  {% set anon = result.anonymisation %}
+  <section class="panel">
+    <h2 class="panel-title">Anonymisation</h2>
+    <p class="panel-note">{{ anon.summary }}</p>
+    <table>
+      <tbody>
+        {% for label, value in [
+             ('Tor exit node', anon.tor),
+             ('VPN / proxy', anon.proxy),
+             ('Hosting / data centre', anon.hosting),
+             ('Mobile network', anon.mobile)] %}
+        <tr>
+          <td>{{ label }}</td>
+          <td>
+            {% if value is none %}
+              <span class="flag flag-unknown">Unknown</span>
+            {% elif value %}
+              <span class="flag flag-yes">Yes</span>
+            {% else %}
+              <span class="flag flag-no">No</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if anon.otx_tags %}
+    <p class="score-caption" style="margin-top:16px">OTX anonymiser tags</p>
+    <div class="engine-list">
+      {% for tag in anon.otx_tags %}
+      <span class="engine-chip">{{ tag }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <p class="panel-note">
+      Context, not a verdict. VPNs and cloud servers carry plenty of legitimate
+      traffic, so this never changes the result above. <strong>Unknown</strong>
+      means no source could answer -- it is not the same as No.
+    </p>
+  </section>
+  {% endif %}
+
   <!-- ---------------------------------------------------- Geolocation -->
   <section class="panel">
     <h2 class="panel-title">Geolocation</h2>

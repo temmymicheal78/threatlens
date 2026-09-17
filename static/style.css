@@ -686,3 +686,33 @@ tbody tr:hover { background: rgba(0, 255, 136, 0.04); }
   color: var(--muted);
   border-color: var(--border);
 }
+
+/* --------------------------------------------------- anonymisation */
+.flag {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 4px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+}
+
+/* Amber rather than red: an anonymised address is a reason to look closer,
+   not evidence of wrongdoing, and red is reserved for malicious verdicts. */
+.flag-yes {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.flag-no {
+  color: var(--muted);
+  border-color: var(--border);
+}
+
+.flag-unknown {
+  color: var(--muted);
+  border-color: var(--border);
+  border-style: dashed;
+  font-style: italic;
+}

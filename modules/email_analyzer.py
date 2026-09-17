@@ -52,8 +52,14 @@ DOCUMENTATION_NETWORKS = (
 # URLs in the body. Deliberately broad -- we want to see everything.
 URL_PATTERN = re.compile(r"https?://[^\s<>\"'\)\]]+", re.IGNORECASE)
 
-# Results that count as a pass for each authentication mechanism.
+# How to read an SPF, DKIM or DMARC result. Only "pass" proves anything and
+# only "fail" disproves anything. softfail is the domain saying a server is
+# probably not authorised while asking receivers not to reject on that basis.
+# Everything else -- none, neutral, temperror, permerror -- means the check
+# reached no conclusion at all.
 PASSING = {"pass"}
+FAILING = {"fail"}
+WEAK_FAILING = {"softfail"}
 
 
 def parse_email(raw_text):
@@ -305,36 +311,89 @@ def check_subject_keywords(message):
     return [word for word in config.PHISHING_KEYWORDS if word in subject]
 
 
+def classify_auth_result(value):
+    """Sort a raw SPF, DKIM or DMARC result by what it actually proves.
+
+    Returns 'pass', 'fail', 'weak', 'unverified', or None when no result was
+    recorded at all.
+
+    An earlier version counted every non-pass as a failure. A DMARC permerror
+    -- a record that simply could not be read -- was then reported as the
+    domain declaring the message fraudulent, and an unsigned message was
+    reported as a failed signature. That presents an absence of evidence as
+    if it were evidence.
+    """
+    if value is None:
+        return None
+    if value in PASSING:
+        return "pass"
+    if value in FAILING:
+        return "fail"
+    if value in WEAK_FAILING:
+        return "weak"
+    return "unverified"
+
+
+def describe_unverified(mechanism, value):
+    """Explain in plain terms why a result is not a verdict either way."""
+    if value == "none":
+        meaning = {
+            "SPF": "the domain publishes no SPF record",
+            "DKIM": "the message carries no DKIM signature",
+            "DMARC": "the domain publishes no DMARC policy",
+        }.get(mechanism, "no result was produced")
+    elif value == "permerror":
+        meaning = "the record could not be evaluated, usually because it is malformed or invalid"
+    elif value == "temperror":
+        meaning = "the check hit a temporary error, usually a DNS lookup failure"
+    elif value == "neutral":
+        meaning = "the domain makes no assertion either way"
+    else:
+        meaning = "the result is not a verdict either way"
+
+    return (
+        f"{mechanism} {value.upper()} -- {meaning}. Not a failure, but "
+        f"{mechanism} gives no evidence of authenticity"
+    )
+
+
 def decide_verdict(auth, spoofing, origin_reputation, keywords, urls):
     """Combine every signal into one verdict.
 
-    Authentication is the backbone: DMARC exists precisely to say whether a
-    message genuinely came from the domain it claims. A DMARC failure is
-    treated as conclusive. Everything else builds a suspicion case.
+    Authentication is the backbone, but only definite results count. A DMARC
+    fail is the domain owner's own policy saying the message is not genuine,
+    so it is conclusive, and so is SPF and DKIM both failing. A result that
+    reached no conclusion -- none, permerror, temperror -- is always reported
+    so the analyst can see it, but it never counts as guilt. Everything else
+    builds a suspicion case.
     """
     reasons = []
     verdict = database.VERDICT_CLEAN
 
-    spf = auth.get("spf")
-    dkim = auth.get("dkim")
-    dmarc = auth.get("dmarc")
+    raw = {
+        "SPF": auth.get("spf"),
+        "DKIM": auth.get("dkim"),
+        "DMARC": auth.get("dmarc"),
+    }
+    state = {name: classify_auth_result(value) for name, value in raw.items()}
 
-    failed = [
-        name for name, value in (("SPF", spf), ("DKIM", dkim), ("DMARC", dmarc))
-        if value is not None and value not in PASSING
-    ]
+    failed = [name for name, result in state.items() if result == "fail"]
+    weak = [name for name, result in state.items() if result == "weak"]
+    passed = [name for name, result in state.items() if result == "pass"]
+    unverified = [name for name, result in state.items() if result == "unverified"]
+    missing = [name for name, result in state.items() if result is None]
 
     # ---------------------------------------------------------- malicious
-    if dmarc is not None and dmarc not in PASSING:
+    if state["DMARC"] == "fail":
         verdict = database.VERDICT_MALICIOUS
         reasons.append(
-            f"DMARC {dmarc.upper()} -- the sending domain's own policy says "
-            f"this message is not authentic"
+            "DMARC FAIL -- the sending domain's own policy says this message "
+            "is not authentic"
         )
 
-    if spf is not None and dkim is not None and spf not in PASSING and dkim not in PASSING:
+    if state["SPF"] == "fail" and state["DKIM"] == "fail":
         verdict = database.VERDICT_MALICIOUS
-        reasons.append(f"Both SPF ({spf}) and DKIM ({dkim}) failed")
+        reasons.append("Both SPF and DKIM failed")
 
     if origin_reputation.get("available") and origin_reputation.get(
         "abuse_score", 0
@@ -350,6 +409,18 @@ def decide_verdict(auth, spoofing, origin_reputation, keywords, urls):
         if failed:
             verdict = database.VERDICT_SUSPICIOUS
             reasons.append(f"Failed authentication: {', '.join(failed)}")
+            if not passed:
+                reasons.append(
+                    "No authentication mechanism passed, so nothing verifies "
+                    "that this message came from the domain it claims"
+                )
+
+        for name in weak:
+            verdict = database.VERDICT_SUSPICIOUS
+            reasons.append(
+                f"{name} SOFTFAIL -- the domain indicates this server is "
+                f"probably not authorised to send for it"
+            )
 
         if spoofing["findings"]:
             verdict = database.VERDICT_SUSPICIOUS
@@ -364,7 +435,7 @@ def decide_verdict(auth, spoofing, origin_reputation, keywords, urls):
                 f"{origin_reputation['abuse_score']}%"
             )
 
-        if keywords and (failed or spoofing["findings"]):
+        if keywords and (failed or weak or spoofing["findings"]):
             reasons.append(
                 f"Subject uses urgency language: {', '.join(keywords[:3])}"
             )
@@ -379,10 +450,9 @@ def decide_verdict(auth, spoofing, origin_reputation, keywords, urls):
     if verdict == database.VERDICT_MALICIOUS and keywords:
         reasons.append(f"Subject uses urgency language: {', '.join(keywords[:3])}")
 
-    missing = [
-        name for name, value in (("SPF", spf), ("DKIM", dkim), ("DMARC", dmarc))
-        if value is None
-    ]
+    for name in unverified:
+        reasons.append(describe_unverified(name, raw[name]))
+
     if missing:
         reasons.append(
             f"No {', '.join(missing)} result recorded -- the receiving server "
@@ -392,7 +462,7 @@ def decide_verdict(auth, spoofing, origin_reputation, keywords, urls):
     if keywords and verdict == database.VERDICT_CLEAN:
         reasons.append(
             f"Subject uses urgency language ({', '.join(keywords[:3])}), but "
-            f"authentication passed"
+            f"no authentication check failed"
         )
 
     if urls:

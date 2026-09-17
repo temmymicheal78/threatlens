@@ -11,12 +11,21 @@ import requests
 
 import config
 
+# ip-api's default response leaves out the anonymisation flags, so every
+# field is named explicitly. proxy covers VPN, proxy and Tor exits; hosting
+# covers data centres and cloud providers. All are free on this tier.
+FIELDS = (
+    "status,message,country,countryCode,regionName,city,isp,org,as,"
+    "timezone,lat,lon,proxy,hosting,mobile"
+)
+
 
 def lookup(ip):
     """Return geolocation and network ownership details for *ip*."""
     try:
         response = requests.get(
             f"{config.GEOLOCATION_URL}/{ip}",
+            params={"fields": FIELDS},
             timeout=config.REQUEST_TIMEOUT,
         )
     except requests.RequestException as exc:
@@ -43,4 +52,7 @@ def lookup(ip):
         "timezone": data.get("timezone"),
         "lat": data.get("lat"),
         "lon": data.get("lon"),
+        "proxy": data.get("proxy"),
+        "hosting": data.get("hosting"),
+        "mobile": data.get("mobile"),
     }

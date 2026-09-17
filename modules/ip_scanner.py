@@ -7,6 +7,7 @@ Author: Temiloluwa Michael Ogunrinde
 """
 
 import ipaddress
+import re
 
 import config
 import database
@@ -139,6 +140,110 @@ def decide_verdict(abuse, vt, otx=None):
     return verdict, reasons
 
 
+# AbuseIPDB usage types that describe infrastructure rather than a person.
+HOSTING_USAGE_TYPES = ("Data Center", "Web Hosting", "Transit",
+                       "Content Delivery Network")
+
+# Whole words in OTX pulse tags that point at anonymisation infrastructure.
+# Matched as words, not substrings -- "tor" must not match "monitor".
+ANONYMISER_TAG_WORDS = {"vpn", "proxy", "proxies", "tor", "anonymizer",
+                        "anonymiser", "anonymous"}
+
+
+def _combine(*answers):
+    """Merge yes/no answers from several sources without inventing certainty.
+
+    True if any source said yes. False only if a source actually answered
+    no and none said yes. None if no source answered at all -- so an
+    unchecked address is shown as unknown, never as a reassuring "No".
+    """
+    answered = [a for a in answers if a is not None]
+    if any(answered):
+        return True
+    if answered:
+        return False
+    return None
+
+
+def assess_anonymisation(abuse, geo, otx=None):
+    """Work out whether this address is likely hiding who is really behind it.
+
+    Tor, VPNs, proxies and cloud servers let an attacker borrow someone
+    else's location and reputation. Knowing an address is one of these
+    changes how an analyst reads everything else -- a login from a hosting
+    provider is not somebody at home.
+
+    This is context, never a verdict. Plenty of legitimate traffic comes
+    through corporate VPNs and cloud platforms, so the result is reported
+    alongside the verdict and is never allowed to change it.
+    """
+    otx = otx or {"available": False}
+    abuse_ok = bool(abuse.get("available"))
+    geo_ok = bool(geo.get("available"))
+
+    usage_type = abuse.get("usage_type") if abuse_ok else None
+    hosting_by_usage = (
+        any(kind in usage_type for kind in HOSTING_USAGE_TYPES)
+        if usage_type else None
+    )
+
+    tor = _combine(abuse.get("is_tor") if abuse_ok else None)
+    proxy = _combine(geo.get("proxy") if geo_ok else None)
+    hosting = _combine(geo.get("hosting") if geo_ok else None, hosting_by_usage)
+    mobile = _combine(geo.get("mobile") if geo_ok else None)
+
+    otx_tags = []
+    if otx.get("available"):
+        for tag in otx.get("tags") or []:
+            words = set(re.split(r"[^a-z0-9]+", str(tag).lower()))
+            if words & ANONYMISER_TAG_WORDS:
+                otx_tags.append(tag)
+
+    # Tor is already reported by decide_verdict, so it is not repeated here.
+    notes = []
+    if proxy:
+        notes.append("Flagged as a VPN or proxy exit -- whoever is behind "
+                     "this address may be somewhere else entirely")
+    if hosting:
+        notes.append("Belongs to a hosting or data-centre network rather "
+                     "than a home or office connection")
+    if mobile:
+        notes.append("On a mobile network, where many people share one "
+                     "address -- its reputation may reflect other users")
+    if otx_tags:
+        notes.append("OTX reports tag this address as anonymisation "
+                     "infrastructure: " + ", ".join(otx_tags[:4]))
+
+    core = (tor, proxy, hosting)
+    flagged = any(v is True for v in core) or bool(otx_tags)
+
+    if flagged:
+        found = [label for label, value in
+                 (("Tor exit node", tor), ("VPN / proxy", proxy),
+                  ("hosting provider", hosting)) if value]
+        if otx_tags:
+            found.append("OTX anonymiser tags")
+        summary = "Anonymisation or infrastructure indicators: " + ", ".join(found)
+    elif all(v is False for v in core):
+        summary = "No sign of Tor, VPN, proxy or hosting infrastructure"
+    elif any(v is False for v in core):
+        summary = ("No anonymisation found in the sources that answered, "
+                   "but not every source could be checked")
+    else:
+        summary = "Could not be assessed -- no source answered"
+
+    return {
+        "tor": tor,
+        "proxy": proxy,
+        "hosting": hosting,
+        "mobile": mobile,
+        "otx_tags": otx_tags,
+        "flagged": flagged,
+        "summary": summary,
+        "notes": notes,
+    }
+
+
 def scan(raw_ip):
     """Run a full IP scan and persist the result.
 
@@ -159,6 +264,11 @@ def scan(raw_ip):
     geo = geolocation.lookup(ip)
 
     verdict, reasons = decide_verdict(abuse, vt, otx_result)
+
+    # Anonymisation is context, so it is assessed separately and appended
+    # after the verdict is fixed -- it can explain a verdict, never change it.
+    anonymisation = assess_anonymisation(abuse, geo, otx_result)
+    reasons.extend(anonymisation["notes"])
 
     # Record which sources actually answered, for the audit trail.
     sources = []
@@ -189,5 +299,6 @@ def scan(raw_ip):
         "virustotal": vt,
         "otx": otx_result,
         "geo": geo,
+        "anonymisation": anonymisation,
         "sources": source_label,
     }

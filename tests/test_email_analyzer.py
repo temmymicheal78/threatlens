@@ -4,6 +4,7 @@ import pytest
 
 import database
 from modules.email_analyzer import (
+    classify_auth_result,
     extract_origin,
     classify_ip,
     extract_mail_path,
@@ -381,3 +382,120 @@ def test_missing_authentication_is_flagged_as_unproven():
         {"findings": []}, NO_REPUTATION, [], [],
     )
     assert any("unproven" in r.lower() or "did not check" in r.lower() for r in reasons)
+
+
+# ------------------------------------------- reading authentication results
+@pytest.mark.parametrize("value,expected", [
+    ("pass", "pass"),
+    ("fail", "fail"),
+    ("softfail", "weak"),
+    ("none", "unverified"),
+    ("neutral", "unverified"),
+    ("temperror", "unverified"),
+    ("permerror", "unverified"),
+    (None, None),
+])
+def test_auth_results_are_sorted_by_what_they_prove(value, expected):
+    """Only pass proves anything and only fail disproves anything."""
+    assert classify_auth_result(value) == expected
+
+
+def test_permerror_and_none_are_parsed_from_real_headers():
+    _, message = parse_email(
+        "Authentication-Results: mail.pot; spf=fail smtp.mailfrom=x.com;"
+        " dkim=none (no signature); dmarc=permerror (no valid record)"
+        " header.from=x.com\n"
+        "From: a@x.com\nSubject: Hello\n"
+    )
+    assert check_authentication(message) == {
+        "spf": "fail", "dkim": "none", "dmarc": "permerror",
+    }
+
+
+def test_dmarc_permerror_is_not_reported_as_a_policy_failure():
+    """The defect this guards against.
+
+    permerror means the DMARC record could not be read. It was reported as
+    "the sending domain's own policy says this message is not authentic",
+    which the domain never said.
+    """
+    verdict, reasons = decide_verdict(
+        {"spf": "pass", "dkim": "pass", "dmarc": "permerror"},
+        {"findings": []}, NO_REPUTATION, [], [],
+    )
+    assert verdict == database.VERDICT_CLEAN
+    assert not any("own policy" in r for r in reasons)
+    assert any("PERMERROR" in r and "Not a failure" in r for r in reasons)
+
+
+def test_unsigned_message_is_not_a_failed_signature():
+    """DKIM none means no signature was present, not that one failed."""
+    verdict, reasons = decide_verdict(
+        {"spf": "pass", "dkim": "none", "dmarc": "pass"},
+        {"findings": []}, NO_REPUTATION, [], [],
+    )
+    assert verdict == database.VERDICT_CLEAN
+    assert any("no DKIM signature" in r for r in reasons)
+    assert not any("Failed authentication" in r for r in reasons)
+
+
+def test_spf_fail_with_no_signature_is_suspicious_not_conclusive():
+    """One definite failure and one absence of evidence is not proof.
+
+    Only SPF actively failed. It warrants escalation, and the analyst is
+    told nothing else vouches for the message -- but the tool does not claim
+    a certainty the headers cannot support.
+    """
+    verdict, reasons = decide_verdict(
+        {"spf": "fail", "dkim": "none", "dmarc": None},
+        {"findings": []}, NO_REPUTATION, [], [],
+    )
+    assert verdict == database.VERDICT_SUSPICIOUS
+    assert any("Failed authentication: SPF" in r for r in reasons)
+    assert any("No authentication mechanism passed" in r for r in reasons)
+
+
+def test_golden_invoice_authentication_is_read_accurately():
+    """spf=fail, dkim=none, dmarc=permerror with replies diverted to Gmail.
+
+    Every signal is still reported, but only SPF counts as a failure.
+    """
+    verdict, reasons = decide_verdict(
+        {"spf": "fail", "dkim": "none", "dmarc": "permerror"},
+        {"findings": ["Reply-To domain (gmail.com) differs from From domain "
+                      "(payhub-notify-secure.com) -- replies would go to a "
+                      "third party"]},
+        NO_REPUTATION, [], [],
+    )
+    assert verdict == database.VERDICT_SUSPICIOUS
+    assert any("Failed authentication: SPF" in r for r in reasons)
+    assert any("DKIM NONE" in r for r in reasons)
+    assert any("DMARC PERMERROR" in r for r in reasons)
+    assert any("gmail.com" in r for r in reasons)
+    assert not any("own policy" in r for r in reasons)
+
+
+def test_real_dmarc_fail_is_still_conclusive():
+    """The fix narrows what counts as failure -- it must not weaken it."""
+    verdict, _ = decide_verdict(
+        {"spf": "none", "dkim": "none", "dmarc": "fail"},
+        {"findings": []}, NO_REPUTATION, [], [],
+    )
+    assert verdict == database.VERDICT_MALICIOUS
+
+
+def test_spf_softfail_raises_suspicion():
+    verdict, reasons = decide_verdict(
+        {"spf": "softfail", "dkim": "none", "dmarc": None},
+        {"findings": []}, NO_REPUTATION, [], [],
+    )
+    assert verdict == database.VERDICT_SUSPICIOUS
+    assert any("SOFTFAIL" in r for r in reasons)
+
+
+def test_temperror_is_explained_as_temporary():
+    _, reasons = decide_verdict(
+        {"spf": "temperror", "dkim": "pass", "dmarc": "pass"},
+        {"findings": []}, NO_REPUTATION, [], [],
+    )
+    assert any("temporary error" in r for r in reasons)

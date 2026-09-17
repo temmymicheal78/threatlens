@@ -58,7 +58,13 @@ Reputation and geolocation for any public IPv4 or IPv6 address.
   malicious
 - **AlienVault OTX** &mdash; community threat pulses, naming the campaigns
   the address has been reported under
-- **ip-api.com** &mdash; country, city, ISP, ASN, organisation
+- **ip-api.com** &mdash; country, city, ISP, ASN, organisation, and whether
+  the address is a VPN, proxy, hosting provider or mobile network
+- **Anonymisation assessment** &mdash; combines the above to answer "is this
+  address hiding who is really behind it?" Reported as context beside the
+  verdict, never as part of it: corporate VPNs and cloud platforms carry
+  plenty of legitimate traffic. Where no source could answer it says
+  **unknown**, never no.
 
 ### URL / Domain Scanner
 Malware and phishing analysis for URLs and bare domains.
@@ -70,11 +76,17 @@ Malware and phishing analysis for URLs and bare domains.
 ### Email Analyzer
 Phishing triage from raw message headers.
 
-- **SPF, DKIM and DMARC** verification from `Authentication-Results`
+- **SPF, DKIM and DMARC** verification from `Authentication-Results`, read
+  by what each result actually proves. Only `fail` counts against a message;
+  `none`, `permerror` and `temperror` mean the check reached no conclusion,
+  and are reported as such rather than as failures
 - **Spoofing detection** &mdash; `From` vs `Return-Path` vs `Reply-To`
   mismatches, and display-name deception
-- **Originating IP reputation** &mdash; walks the `Received` chain back to
-  the true sender and scores it via AbuseIPDB
+- **Originating IP reputation** &mdash; takes the sending address from the
+  receiving server's own `client-ip`, falling back to the `Received` chain,
+  and scores it via AbuseIPDB
+- **Full mail path** &mdash; every hop in order, each address labelled public,
+  internal, documentation or loopback
 - **URL extraction** &mdash; embedded links listed as non-clickable text
 
 ### File Hash Scanner
@@ -151,8 +163,9 @@ costs far more than investigating a false positive.
    modules/              threat_intel/          database.py
    ip_scanner            abuseipdb                 |
    url_scanner           virustotal            SQLite audit
-   email_analyzer        geolocation              trail
-   file_scanner          whois_lookup
+   email_analyzer        otx                      trail
+   file_scanner          geolocation
+                         whois_lookup
         |                     |
    validate input        query source
    combine signals       normalise response
@@ -226,8 +239,9 @@ pip install pytest
 python -m pytest tests -q
 ```
 
-**155 tests**, covering input validation, verdict logic for all four
-indicator types, database persistence and filtering, and every route.
+**215 tests**, covering input validation, verdict logic for all four
+indicator types, anonymisation assessment, database persistence and
+filtering, and every route.
 
 The suite makes **no network calls**. Verdict functions are pure &mdash;
 they take intelligence responses as plain dictionaries and return a verdict
@@ -239,9 +253,13 @@ a throwaway database and that the real scan history is untouched. Without
 them, running the tests would quietly write test data into real scan
 records.
 
-The suite has already earned its place: it caught an ordering bug where two
-scans saved within the same second were returned newest-last, because
-second-precision timestamps made `ORDER BY scanned_at` ambiguous.
+The suite has already earned its place three times. It caught an ordering
+bug where two scans saved within the same second were returned newest-last,
+because second-precision timestamps made `ORDER BY scanned_at` ambiguous.
+It pinned down a fail-open defect where unreachable intelligence sources
+produced a CLEAN verdict. And it now guards the rule that a DMARC
+`permerror` &mdash; a record that could not be read &mdash; is never
+reported as the domain declaring a message fraudulent.
 
 ## Tech stack
 
